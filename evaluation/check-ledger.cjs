@@ -553,7 +553,124 @@ const english = [
     ]
   }
 ];
-const cases = [...seed, ...regression, ...english];
+const mixed = [
+  {
+    "s": "今仔日 starting cash 五百箍",
+    "expected": [
+      [
+        "float",
+        500
+      ]
+    ]
+  },
+  {
+    "s": "現金 sold 三百箍",
+    "expected": [
+      [
+        "cashIn",
+        300
+      ]
+    ]
+  },
+  {
+    "s": "LINE Pay 收著 eighty",
+    "expected": [
+      [
+        "digitalIn",
+        80
+      ]
+    ]
+  },
+  {
+    "s": "補貨 paid by card 100箍",
+    "expected": [
+      [
+        "digitalOut",
+        100
+      ]
+    ]
+  },
+  {
+    "s": "客人猶未予錢 two hundred",
+    "expected": [
+      [
+        "unpaid",
+        200
+      ]
+    ]
+  },
+  {
+    "s": "今仔日現金收了 around three hundred",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "刷卡 refund 八十箍，再補貨花一百",
+    "expected": [
+      [
+        "digitalOut",
+        80
+      ],
+      [
+        "cashOut",
+        100
+      ]
+    ]
+  },
+  {
+    "s": "今仔日現金收入三百外箍",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "現金收入 USD 50 箍",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "現金收入 negative fifty 箍",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "今仔日 starting cash 五百箍，現金 sold 三百箍，LINE Pay 收著 eighty，客人猶未予錢 two hundred",
+    "expected": [
+      [
+        "float",
+        500
+      ],
+      [
+        "cashIn",
+        300
+      ],
+      [
+        "digitalIn",
+        80
+      ],
+      [
+        "unpaid",
+        200
+      ]
+    ]
+  }
+];
+const cases = [...seed, ...regression, ...english, ...mixed];
 let failures = 0;
 for (const {s, expected} of cases) {
   try {
