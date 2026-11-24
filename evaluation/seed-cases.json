@@ -1,0 +1,142 @@
+{
+  "description": "人工編寫的初步文字測試，包含待確認案例。比較每句拆出的筆數、順序、類型與金額，全部符合才算通過。此測試集已用於開發，並非獨立盲測。",
+  "baselineBlob": "e63998ac9252e4fd94c4035b2fc73da606848bc7",
+  "baselinePassed": 8,
+  "revisedPassed": 14,
+  "cases": [
+    {
+      "input": "現金收了五百",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": 500
+        }
+      ]
+    },
+    {
+      "input": "現金賣了三個五十",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": 150
+        }
+      ]
+    },
+    {
+      "input": "LINE Pay 收了兩份各六十折十",
+      "expected": [
+        {
+          "type": "digitalIn",
+          "value": 110
+        }
+      ]
+    },
+    {
+      "input": "補貨花三百折五十",
+      "expected": [
+        {
+          "type": "cashOut",
+          "value": 250
+        }
+      ]
+    },
+    {
+      "input": "退款五十",
+      "expected": [
+        {
+          "type": "cashOut",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "input": "轉帳退款八十",
+      "expected": [
+        {
+          "type": "digitalOut",
+          "value": 80
+        }
+      ]
+    },
+    {
+      "input": "賒帳兩百",
+      "expected": [
+        {
+          "type": "unpaid",
+          "value": 200
+        }
+      ]
+    },
+    {
+      "input": "賣了三百還沒付",
+      "expected": [
+        {
+          "type": "unpaid",
+          "value": 300
+        }
+      ]
+    },
+    {
+      "input": "現金賣了兩千三，然後補貨花四百五",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": 2300
+        },
+        {
+          "type": "cashOut",
+          "value": 450
+        }
+      ]
+    },
+    {
+      "input": "現金收了一百另外刷卡收兩百",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": 100
+        },
+        {
+          "type": "digitalIn",
+          "value": 200
+        }
+      ]
+    },
+    {
+      "input": "現金收了大概五百",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "input": "五十元",
+      "expected": [
+        {
+          "type": "",
+          "value": 50
+        }
+      ]
+    },
+    {
+      "input": "收了1,250元",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": 1250
+        }
+      ]
+    },
+    {
+      "input": "現金收了五百.2",
+      "expected": [
+        {
+          "type": "cashIn",
+          "value": ""
+        }
+      ]
+    }
+  ]
+}
