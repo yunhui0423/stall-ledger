@@ -43,6 +43,21 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <label for="cash">實點現金（元）</label>
   <input id="cash" type="number" min="0" step="1" inputmode="numeric" placeholder="輸入收攤時手上的現金">
   <p id="difference" aria-live="polite"></p>
+  <details class="lead" id="incident-panel">
+   <summary>記錄差額原因</summary>
+   <form id="incident" class="lead">
+    <label for="incident-reason">原因</label>
+    <select id="incident-reason">
+     <option value="">未設定</option>
+     <option>找錯錢</option><option>疑似詐騙</option><option>漏記交易</option><option>原因不明</option><option>其他</option>
+    </select>
+    <label for="incident-note" class="lead">備註</label>
+    <textarea id="incident-note" maxlength="500" placeholder="例如：下午多找客人 50 元"></textarea>
+    <button type="submit">儲存差額紀錄</button>
+    <p class="muted lead">這裡只記原因，現金差額仍依實點金額計算。</p>
+    <p id="incident-status" class="notice" role="status"></p>
+   </form>
+  </details>
   <p class="muted lead">帳面現金＝找零金＋現金收入－現金支出。電子支付另計。</p>
  </section>
  </div>
@@ -153,7 +168,12 @@ function showTotals(){
   $('difference').textContent=current.cash===''?'':diff===0?'現金相符':diff>0?'現金多 '+format(diff):'現金少 '+format(-diff);
 }
 function render(){
-  $('cash').value=today().cash;
+  const current=today();
+  $('cash').value=current.cash;
+  $('incident-reason').value=current.incident?.reason ?? '';
+  $('incident-note').value=current.incident?.note ?? '';
+  $('incident-panel').open=Boolean(current.incident);
+  $('incident-status').textContent='';
   showTotals();
   $('entries').replaceChildren();
   if(!today().entries.length) $('entries').append(control('p','這一天還沒有帳目。',{class:'muted'}));
@@ -180,6 +200,23 @@ $('day').onchange=()=>{
   if(!$('review').hidden) $('status').textContent='入帳日期已切換為 '+$('day').value+'，請確認。';
 };
 $('day').dataset.previous=$('day').value;
+$('incident').onsubmit=event=>{
+  event.preventDefault();
+  const current=today();
+  const reason=$('incident-reason').value;
+  const note=$('incident-note').value.trim();
+  const updated={...current};
+  if(reason || note) updated.incident={reason,note};
+  else delete updated.incident;
+  const next={...records,[$('day').value]:updated};
+  try {
+    localStorage.setItem(key,JSON.stringify(next));
+    records=next;
+    $('incident-status').textContent=updated.incident?'已儲存此日的差額紀錄。':'已清除此日的差額紀錄。';
+  } catch {
+    $('incident-status').textContent='瀏覽器無法儲存差額紀錄，請稍後再試。';
+  }
+};
 $('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();}};
 $('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
 $('manual').onclick=()=>addDraft({note:'',type:'',value:''});
@@ -230,7 +267,10 @@ function readBackup(text){
     const validEntries=Array.isArray(data?.entries) && data.entries.every(item=>
       typeof item?.note==='string' && item.note.trim()!=='' && item.note.length<=240 &&
       Object.hasOwn(types,item.type) && Number.isSafeInteger(item.value) && item.value>0 && item.value<=999999999);
-    if(!validDay || !validCash || !validEntries) throw new Error('備份中有無效的日期或帳目。');
+    const incident=data?.incident;
+    const validIncident=incident===undefined || (incident && typeof incident.note==='string' &&
+      incident.note.length<=500 && ['', '找錯錢','疑似詐騙','漏記交易','原因不明','其他'].includes(incident.reason));
+    if(!validDay || !validCash || !validEntries || !validIncident) throw new Error('備份中有無效的日期或帳目。');
   }
   return backup.days;
 }
@@ -239,8 +279,8 @@ function mergeBackup(current,incoming){
   let added=0, skipped=0;
   for(const [day,data] of Object.entries(incoming)){
     const existing=merged[day];
-    if(existing && (existing.entries.length || existing.cash!=='')){ skipped++; continue; }
-    if(!data.entries.length && data.cash==='') continue;
+    if(existing && (existing.entries.length || existing.cash!=='' || existing.incident)){ skipped++; continue; }
+    if(!data.entries.length && data.cash==='' && !data.incident) continue;
     merged[day]=data;
     added++;
   }
