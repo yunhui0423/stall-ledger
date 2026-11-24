@@ -397,7 +397,163 @@ const regression = [
     ]
   }
 ];
-const cases = [...seed, ...regression];
+const english = [
+  {
+    "s": "Starting cash five hundred, cash sales 2,300, LINE Pay received eight hundred, spent 450 on supplies in cash.",
+    "expected": [
+      [
+        "float",
+        500
+      ],
+      [
+        "cashIn",
+        2300
+      ],
+      [
+        "digitalIn",
+        800
+      ],
+      [
+        "cashOut",
+        450
+      ]
+    ]
+  },
+  {
+    "s": "Cash sales one thousand two hundred and thirty-five",
+    "expected": [
+      [
+        "cashIn",
+        1235
+      ]
+    ]
+  },
+  {
+    "s": "Sold 250 in cash then paid 120 by card",
+    "expected": [
+      [
+        "cashIn",
+        250
+      ],
+      [
+        "digitalOut",
+        120
+      ]
+    ]
+  },
+  {
+    "s": "LINE Pay refunded seventy-five",
+    "expected": [
+      [
+        "digitalOut",
+        75
+      ]
+    ]
+  },
+  {
+    "s": "Sold two hundred on credit",
+    "expected": [
+      [
+        "unpaid",
+        200
+      ]
+    ]
+  },
+  {
+    "s": "Cash sales around three hundred",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "Received USD 50 in cash",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "Sold 500 in cash, 補貨花一百",
+    "expected": [
+      [
+        "cashIn",
+        500
+      ],
+      [
+        "cashOut",
+        100
+      ]
+    ]
+  },
+  {
+    "s": "Cash sales 300. Spent 40 in cash.",
+    "expected": [
+      [
+        "cashIn",
+        300
+      ],
+      [
+        "cashOut",
+        40
+      ]
+    ]
+  },
+  {
+    "s": "Cash sales 100.50",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "Cash sales negative one hundred",
+    "expected": [
+      [
+        "cashIn",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "Bought stock on credit for 350",
+    "expected": [
+      [
+        "",
+        ""
+      ]
+    ]
+  },
+  {
+    "s": "Customer hasn't paid 200",
+    "expected": [
+      [
+        "unpaid",
+        200
+      ]
+    ]
+  },
+  {
+    "s": "Starting cash 500 and then received 240 by card",
+    "expected": [
+      [
+        "float",
+        500
+      ],
+      [
+        "digitalIn",
+        240
+      ]
+    ]
+  }
+];
+const cases = [...seed, ...regression, ...english];
 let failures = 0;
 for (const {s, expected} of cases) {
   try {
