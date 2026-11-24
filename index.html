@@ -351,7 +351,26 @@ $('review').onsubmit=event=>{
   $('status').textContent='已入帳 '+items.length+' 筆。';
   render();
 };
+function draftSpeech(transcript){
+  if(!transcript){$('status').textContent='沒有取得語音辨識結果，請再試一次。';return;}
+  $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
+  const items=parseText(transcript);
+  items.forEach(addDraft);
+  $('status').textContent=items.length
+    ? '語音已自動拆出 '+items.length+' 筆。'+(items.some(item=>item.flag)?'請補齊待確認欄位。':'請核對後入帳。')
+    : '沒有辨識到可拆分的語音，請再說一次。';
+}
+window.receiveAndroidSpeech=transcript=>{
+  $('mic').disabled=false;
+  draftSpeech(transcript.trim());
+};
 $('mic').onclick=()=>{
+  if(window.AndroidLedger){
+    $('mic').disabled=true;
+    $('status').textContent='正在開啟語音輸入。';
+    window.AndroidLedger.startSpeech();
+    return;
+  }
   const Speech=window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!Speech){$('status').textContent='此瀏覽器未提供語音辨識，可使用手機鍵盤的麥克風。';return;}
   const recognition=new Speech();
@@ -360,13 +379,7 @@ $('mic').onclick=()=>{
   recognition.onresult=event=>{
     const transcript=Array.from(event.results).slice(event.resultIndex)
       .filter(result=>result.isFinal).map(result=>result[0].transcript).join('，').trim();
-    if(!transcript) return;
-    $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
-    const items=parseText(transcript);
-    items.forEach(addDraft);
-    $('status').textContent=items.length
-      ? '語音已自動拆出 '+items.length+' 筆。'+(items.some(item=>item.flag)?'請補齊待確認欄位。':'請核對後入帳。')
-      : '沒有辨識到可拆分的語音，請再說一次。';
+    draftSpeech(transcript);
   };
   recognition.onerror=()=>{$('status').textContent='語音辨識未取得文字，可改用鍵盤麥克風或手動輸入。';};
   recognition.onend=()=>{$('mic').disabled=false;};
@@ -428,6 +441,10 @@ $('backup-file').onchange=async event=>{
   }
 };
 function downloadFile(body,mime,filename){
+  if(window.AndroidLedger){
+    window.AndroidLedger.saveFile(body,mime,filename);
+    return;
+  }
   const url=URL.createObjectURL(new Blob([body],{type:mime}));
   const link=control('a','',{href:url,download:filename});
   link.click();
@@ -439,6 +456,7 @@ $('export').onclick=()=>{
   downloadFile('\uFEFF'+lines.map(line=>line.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8','stall-ledger-'+$('day').value+'.csv');
 };
 render();
+if(window.AndroidLedger) $('app-install').hidden=true;
 let installPrompt;
 window.addEventListener('beforeinstallprompt', event=>{
   event.preventDefault();
@@ -452,7 +470,7 @@ $('install-app').onclick=async ()=>{
   $('install-app').hidden=true;
   await prompt.prompt();
 };
-if('serviceWorker' in navigator && location.protocol==='https:'){
+if(!window.AndroidLedger && 'serviceWorker' in navigator && location.protocol==='https:'){
   navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('App offline setup failed',error));
 }
 </script>
