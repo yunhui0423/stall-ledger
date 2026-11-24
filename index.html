@@ -122,7 +122,7 @@ function parseLine(note){
   const conflict=/取消|作廢|沒花錢|未支付|不用付|沒收到退款/.test(note) || (unpaid && outgoing);
   const type=(unpaid && outgoing) || /取消|作廢/.test(note)?'':settled?(digital?'digitalIn':'cashIn'):unpaid?'unpaid':float && !outgoing && !incoming?'float':outgoing!==incoming && !float?
     (outgoing?(digital?'digitalOut':'cashOut'):(digital?'digitalIn':'cashIn')):'';
-  const uncertain=conflict || /負|约|約|(?:[\d十百千萬零一二三四五六七八九兩]\s*多)(?=\s*(?:元|塊|$))|大概|差不多|左右|可能|不確定|多一點|多款|多塊|多元|多萬|多千|多百|(?:少於|超過)|[-－−]|\d\s*多(?=\s|$)|到\s*[\d一二三四五六七八九兩十百千萬]|\d\s*[萬千百]|[\d萬千百十]點[零一二三四五六七八九\d]|\d\.\d/.test(note);
+  const uncertain=conflict || /負|约|約|(?:[\d十百千萬零一二三四五六七八九兩]\s*多)(?=\s*(?:元|塊|$))|大概|差不多|左右|可能|不確定|多一點|多款|多塊|多元|多萬|多千|多百|(?:少於|超過)|[-－−]|\d\s*多(?=\s|$)|(?<!收)到\s*[\d一二三四五六七八九兩十百千萬]|\d\s*[萬千百]|[\d萬千百十]點[零一二三四五六七八九\d]|\d\.\d/.test(note);
   const quantity=new RegExp('('+money+')\\s*(?:個|份|杯|袋|盒|件|斤|碗|包|瓶|支)\\s*(?:(?:每|一)(?:個|份|杯|袋|盒|件|斤|碗|包|瓶|支)\\s*|各\\s*)?('+money+')');
   const discount=new RegExp('(?:折抵|折扣|折了|折|少收|扣掉|減)\\s*('+money+')');
   const deal=text.match(quantity);
@@ -184,10 +184,36 @@ function parseEnglish(note){
   if(!type) flags.push('請選擇收入、支出、找零金或未收款。');
   return {note,type,value:valid?value:'',flag:flags.join(' ')};
 }
+function parseMixed(note){
+  if(!/[\u3400-\u9fff]/.test(note)) return parseEnglish(note);
+  const text=note
+    .replace(/現金予|掠去買/g,'付了')
+    .replace(/找錢金/g,'找零金')
+    .replace(/猶未付|猶未予錢|猶未收著|猶未收到|猶欠|賒數/g,'未收款')
+    .replace(/有收著|收著/g,'收到')
+    .replace(/賣出|賣著/g,'賣')
+    .replace(/退予|退錢/g,'退款')
+    .replace(/箍|塊錢/g,'元')
+    .replace(/([十百千萬零一二三四五六七八九兩\d])外(?=\s*(?:元|$))/g,'$1多')
+    .replace(/\b(?:starting cash|opening cash|cash float|change fund)\b/gi,'找零金')
+    .replace(/\b(?:cash sales|sold|sales|collected|received|income)\b/gi,'收入')
+    .replace(/\b(?:on credit|unpaid|hasn't paid|not paid)\b/gi,'未收款')
+    .replace(/\b(?:spent|paid|expense|bought|restocked)\b/gi,'支出')
+    .replace(/\b(?:refund(?:ed)?|gave a refund)\b/gi,'退款')
+    .replace(/\b(?:card|transfer|mobile payment|digital)\b/gi,'電子支付')
+    .replace(/\b(?:about|around|roughly|approximately|maybe)\b/gi,'大概')
+    .replace(/\b(?:minus|negative)\b/gi,'負')
+    .replace(englishAmount, token=>/^\d/.test(token)?token:String(englishNumber(token)));
+  const result=parseLine(text);
+  if(/\b(?:USD|EUR|GBP|JPY|CNY|US dollars|euros|yen|million|billion)\b|US\$|€|£|¥/i.test(note)){
+    return {...result,note,value:'',flag:'請確認這筆的實際金額（新台幣）。'};
+  }
+  return {...result,note};
+}
 function parseText(source){
   return source.normalize('NFKC').replace(/(?<!\d),|,(?!\d{3}(?:\D|$))/g,'，')
     .split(/[，、；;。！!？?\n]+|[.](?!\d)|\b(?:and then|then|and)\s+(?=(?:cash (?:sales|received)|card (?:sales|refund)|sold|spent|bought|paid|received|refunded|collected|LINE Pay)\b)|(?:另外|接著|然後|再|又)(?=\s*(?:現金|LINE|街口|刷卡|轉帳|補貨|進貨|退款|賒帳|收(?:了|到|(?=[\d一二三四五六七八九兩十百千萬]))|賣了|支出))/i)
-    .map(x=>x.trim()).filter(Boolean).map(note=>/[\u3400-\u9fff]/.test(note)?parseLine(note):parseEnglish(note));
+    .map(x=>x.trim()).filter(Boolean).map(parseMixed);
 }
 function control(tag, text, attributes={}){
   const element=document.createElement(tag);
