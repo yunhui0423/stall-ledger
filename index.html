@@ -2,6 +2,9 @@
 <html lang="zh-Hant">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#173c2c">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./app-icon.svg" type="image/svg+xml">
 <title>收攤對帳</title>
 <style>
 :root{font:16px/1.5 system-ui,sans-serif;color:#192c23;background:#f4f5ed;color-scheme:light}
@@ -74,6 +77,11 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
  </div>
  <p id="backup-status" class="notice" role="status"></p>
 </section>
+<details class="lead" id="app-install">
+ <summary>安裝到手機主畫面</summary>
+ <p class="muted lead">iPhone：用 Safari 開啟，從「分享」選「加入主畫面」。Android：在 Chrome 選單選「安裝應用程式」或「加到主畫面」。</p>
+ <button id="install-app" type="button" hidden>安裝收攤對帳</button>
+</details>
 </main>
 <script>
 'use strict';
@@ -431,5 +439,21 @@ $('export').onclick=()=>{
   downloadFile('\uFEFF'+lines.map(line=>line.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8','stall-ledger-'+$('day').value+'.csv');
 };
 render();
+let installPrompt;
+window.addEventListener('beforeinstallprompt', event=>{
+  event.preventDefault();
+  installPrompt=event;
+  $('install-app').hidden=false;
+});
+$('install-app').onclick=async ()=>{
+  if(!installPrompt) return;
+  const prompt=installPrompt;
+  installPrompt=undefined;
+  $('install-app').hidden=true;
+  await prompt.prompt();
+};
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('App offline setup failed',error));
+}
 </script>
 </html>
