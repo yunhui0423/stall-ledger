@@ -115,21 +115,34 @@ function parseLine(note){
   const tokens=text.match(new RegExp(money,'g')) || [];
   const digital=/line\s*pay|街口|電子支付|轉帳|刷卡|悠遊卡|全支付/i.test(note);
   const unpaid=/賒帳|賒欠|未收款|還沒(?:付|收到)|還未(?:付|收到)|假轉帳/i.test(note);
-  const outgoing=/支出|補貨|付了|花|成本|買了|買進|進貨|退款|退給/.test(note);
+  const outgoing=/支出|補貨|付了|付運費|付租金|花|成本|買了|買進|進貨|退款|退給/.test(note);
   const incoming=/收入|賣|收了|收到|收\s*[\d零一二三四五六七八九兩十百千萬]|營業額|入帳/.test(note);
   const float=/找零金|備用金|起始現金/.test(note);
-  const type=unpaid?'unpaid':float && !outgoing && !incoming?'float':outgoing!==incoming && !float?
+  const settled=!outgoing && /(?:收到|收回|收了).*(?:賒帳|欠款)|(?:賒帳|欠款).*(?:已收|收到了)/.test(note) && !/還[沒未]|未收|沒收到|假轉帳/.test(note);
+  const conflict=/取消|作廢|沒花錢|未支付|不用付|沒收到退款/.test(note) || (unpaid && outgoing);
+  const type=(unpaid && outgoing) || /取消|作廢/.test(note)?'':settled?(digital?'digitalIn':'cashIn'):unpaid?'unpaid':float && !outgoing && !incoming?'float':outgoing!==incoming && !float?
     (outgoing?(digital?'digitalOut':'cashOut'):(digital?'digitalIn':'cashIn')):'';
-  const uncertain=/大概|差不多|左右|可能|不確定|多一點|多款|多塊|多元|多萬|多千|多百|(?:少於|超過)|[-－−]|\d\s*多(?=\s|$)|到\s*[\d一二三四五六七八九兩十百千萬]|\d\s*[萬千百]|[\d萬千百十]點[零一二三四五六七八九\d]|\d\.\d/.test(note);
+  const uncertain=conflict || /負|约|約|(?:[\d十百千萬零一二三四五六七八九兩]\s*多)(?=\s*(?:元|塊|$))|大概|差不多|左右|可能|不確定|多一點|多款|多塊|多元|多萬|多千|多百|(?:少於|超過)|[-－−]|\d\s*多(?=\s|$)|到\s*[\d一二三四五六七八九兩十百千萬]|\d\s*[萬千百]|[\d萬千百十]點[零一二三四五六七八九\d]|\d\.\d/.test(note);
   const quantity=new RegExp('('+money+')\\s*(?:個|份|杯|袋|盒|件|斤|碗|包|瓶|支)\\s*(?:(?:每|一)(?:個|份|杯|袋|盒|件|斤|碗|包|瓶|支)\\s*|各\\s*)?('+money+')');
   const discount=new RegExp('(?:折抵|折扣|折了|折|少收|扣掉|減)\\s*('+money+')');
   const deal=text.match(quantity);
+  const rate=text.match(/打\s*([一二三四五六七八九1-9])\s*折/);
+  const total=text.match(new RegExp('(?:總共|合計|共計)\\s*('+money+')'));
+  const change=text.match(new RegExp('找零\\s*('+money+')'));
   const off=text.match(discount);
   let value=NaN;
   if(tokens.length===1 && !off) value=amount(tokens[0]);
   if(deal && tokens.length===(off?3:2)) value=amount(deal[1])*amount(deal[2])-(off?amount(off[1]):0);
   if(!deal && off && tokens.length===2 && tokens[1]===off[1] && text.indexOf(tokens[0])<off.index) value=amount(tokens[0])-amount(off[1]);
+  if(rate) value=tokens.length===2?amount(tokens[0])*amount(rate[1])/10:NaN;
+  if(total && deal && !off && !rate && tokens.length===3){
+    const calculated=amount(deal[1])*amount(deal[2]);
+    value=calculated===amount(total[1])?calculated:NaN;
+  }
+  if(change) value=type==='cashIn' && tokens.length===2 && !off && !rate && !deal?
+    amount(tokens[0])-amount(change[1]):NaN;
   const flag=[];
+  if(unpaid && outgoing) flag.push('這可能是尚未支付的進貨款，請確認是否已有實際付款。');
   if(uncertain || !Number.isSafeInteger(value) || value<=0 || value>999999999){
     value='';
     flag.push(unpaid?'這筆未收款金額是多少？':'這筆實際金額是多少元？');
@@ -139,7 +152,7 @@ function parseLine(note){
 }
 function parseText(source){
   return source.normalize('NFKC').replace(/(?<!\d),|,(?!\d{3}(?:\D|$))/g,'，')
-    .split(/[，、；;。！!？?\n]+|(?:另外|接著|然後|再)(?=\s*(?:現金|LINE|街口|刷卡|轉帳|補貨|進貨|退款|賒帳|收了|賣了|支出))/i)
+    .split(/[，、；;。！!？?\n]+|(?:另外|接著|然後|再|又)(?=\s*(?:現金|LINE|街口|刷卡|轉帳|補貨|進貨|退款|賒帳|收(?:了|到|(?=[\d一二三四五六七八九兩十百千萬]))|賣了|支出))/i)
     .map(x=>x.trim()).filter(Boolean).map(parseLine);
 }
 function control(tag, text, attributes={}){
