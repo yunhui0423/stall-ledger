@@ -32,8 +32,8 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <h2>記一筆，或一次講完</h2>
   <label for="speech">帳目內容</label>
   <textarea id="speech" placeholder="例如：現金賣了兩千三，LINE Pay 收八百，補貨花四百五"></textarea>
-  <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><label for="speech-lang">語音語言</label><select id="speech-lang"><option value="zh-TW">中文</option><option value="en-US">English</option></select><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
-  <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音辨識以選定的語言為主，金額以新台幣記帳。</p>
+  <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
+  <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p id="status" class="notice" role="status"></p>
   <form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">確認入帳</button></form>
  </section>
@@ -323,7 +323,7 @@ $('incident').onsubmit=event=>{
   }
 };
 $('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();}};
-$('example').onclick=()=>{$('speech').value=$('speech-lang').value==='en-US'?'Starting cash five hundred, cash sales 2,300, LINE Pay received eight hundred, spent 450 on supplies in cash.':example;$('speech').focus();};
+$('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
 $('manual').onclick=()=>addDraft({note:'',type:'',value:''});
 $('parse').onclick=()=>{
   const items=parseText($('speech').value);
@@ -347,7 +347,7 @@ $('mic').onclick=()=>{
   const Speech=window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!Speech){$('status').textContent='此瀏覽器未提供語音辨識，可使用手機鍵盤的麥克風。';return;}
   const recognition=new Speech();
-  recognition.lang=$('speech-lang').value;
+  recognition.lang='zh-TW';
   recognition.onstart=()=>{$('mic').disabled=true;$('status').textContent='正在聆聽，請開始說話。';};
   recognition.onresult=event=>{
     const transcript=Array.from(event.results).slice(event.resultIndex)
