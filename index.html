@@ -27,6 +27,9 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
 .row input,.row select{width:100%}.row label{min-width:0;font-size:.88rem}.row .flag{grid-column:1/-1;color:#865109;margin:0}
 .notice{margin-top:8px;min-height:1.5em;color:#865109} .bar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
 @media(max-width:730px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr 1fr}.row label:first-child{grid-column:1/-1}}
+#history-list{overflow-x:auto;margin-top:12px} #history-list table{border-collapse:collapse;width:100%;white-space:nowrap}
+#history-list th,#history-list td{text-align:left;padding:8px;border-bottom:1px solid #e0e9df}
+#history-month{margin-top:4px}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div><label>帳目日期 <input type="date" id="day"></label></header>
@@ -67,6 +70,12 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
  </div>
  <section><div class="bar"><h2>已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
  <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
+<section class="lead">
+ <div class="bar"><h2>月報與歷史帳目</h2><button id="export-month" type="button">匯出月報 CSV</button></div>
+ <label for="history-month">查詢月份</label><input id="history-month" type="month">
+ <dl id="month-totals" class="lead"></dl>
+ <div id="history-list"></div>
+</section>
 <section class="lead">
  <h2>備份與還原</h2>
  <p class="muted">帳目自動存於目前的瀏覽器。換裝置或清除瀏覽器資料前，請下載完整備份。</p>
@@ -258,6 +267,57 @@ function sums(entries){
   return {...totals, expected:totals.float+totals.cashIn-totals.cashOut,
     net:totals.cashIn+totals.digitalIn-totals.cashOut-totals.digitalOut};
 }
+function monthRows(source, month){
+  return Object.entries(source).filter(([day,data])=>day.startsWith(month+'-') &&
+    (data.entries.length || data.cash!=='' || data.incident))
+    .sort(([a],[b])=>b.localeCompare(a)).map(([day,data])=>{
+      const totals=sums(data.entries);
+      return {day,income:totals.cashIn+totals.digitalIn,expense:totals.cashOut+totals.digitalOut,
+        net:totals.net,unpaid:totals.unpaid,expected:totals.expected,cash:data.cash===''?null:Number(data.cash),
+        diff:data.cash===''?null:Number(data.cash)-totals.expected,
+        reason:data.incident?.reason ?? '',note:data.incident?.note ?? ''};
+    });
+}
+const monthFields={income:'已收收入',expense:'已付支出',net:'收支淨額',unpaid:'已登錄未收款',
+  expected:'帳面現金',cash:'實點現金',diff:'現金差額'};
+const monthInput=$('history-month');
+monthInput.value=$('day').value.slice(0,7);
+function renderMonth(){
+  const rows=monthRows(records,monthInput.value);
+  $('export-month').disabled=!rows.length;
+  $('month-totals').replaceChildren(...Object.entries(monthFields).slice(0,4).map(([key,label])=>{
+    const line=control('div');
+    line.append(control('dt',label),control('dd',format(rows.reduce((sum,row)=>sum+row[key],0))));
+    return line;
+  }));
+  const list=$('history-list');
+  if(!rows.length){list.replaceChildren(control('p','此月份沒有帳目。',{class:'muted'}));return;}
+  const table=control('table');
+  const header=control('tr');
+  header.append(...['日期',...Object.values(monthFields),'差額原因'].map(label=>control('th',label,{scope:'col'})));
+  const head=control('thead');head.append(header);
+  const body=control('tbody');
+  for(const item of rows){
+    const tr=control('tr');
+    const dateCell=control('td');
+    const open=control('button',item.day,{type:'button'});
+    open.onclick=()=>{$('day').value=item.day;$('day').onchange();$('day').focus();};
+    dateCell.append(open);
+    tr.append(dateCell,...Object.keys(monthFields).map(key=>control('td',item[key]===null?'未輸入':format(item[key]))),
+      control('td',item.reason || (item.note?'有備註':'—')));
+    body.append(tr);
+  }
+  table.append(head,body);
+  list.replaceChildren(table);
+}
+monthInput.onchange=renderMonth;
+$('export-month').onclick=()=>{
+  const rows=monthRows(records,monthInput.value);
+  const lines=[['日期',...Object.values(monthFields),'差額原因','備註'],
+    ...rows.map(row=>[row.day,...Object.keys(monthFields).map(key=>row[key]??''),row.reason,row.note])];
+  downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),
+    'text/csv;charset=utf-8','stall-ledger-month-'+monthInput.value+'.csv');
+};
 function showTotals(){
   const current=today();
   const totals=sums(current.entries);
@@ -288,6 +348,7 @@ function render(){
   $('incident-panel').open=Boolean(current.incident);
   $('incident-status').textContent='';
   showTotals();
+  renderMonth();
   $('entries').replaceChildren();
   if(!today().entries.length) $('entries').append(control('p','這一天還沒有帳目。',{class:'muted'}));
   for(const [i,item] of today().entries.entries()){
@@ -325,12 +386,13 @@ $('incident').onsubmit=event=>{
   try {
     localStorage.setItem(key,JSON.stringify(next));
     records=next;
+    renderMonth();
     $('incident-status').textContent=updated.incident?'已儲存此日的差額紀錄。':'已清除此日的差額紀錄。';
   } catch {
     $('incident-status').textContent='瀏覽器無法儲存差額紀錄，請稍後再試。';
   }
 };
-$('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();}};
+$('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();renderMonth();}};
 $('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
 $('manual').onclick=()=>addDraft({note:'',type:'',value:''});
 $('parse').onclick=()=>{
@@ -450,10 +512,10 @@ function downloadFile(body,mime,filename){
   link.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+const csvCell=value=>'"'+String(value).replace(/^[\s]*[=+\-@]/, match=>"'"+match).replaceAll('"','""')+'"';
 $('export').onclick=()=>{
-  const quote=value=>'"'+String(value).replace(/^[\s]*[=+\-@]/, match=>"'"+match).replaceAll('"','""')+'"';
   const lines=[['日期','摘要','類型','金額'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value])];
-  downloadFile('\uFEFF'+lines.map(line=>line.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8','stall-ledger-'+$('day').value+'.csv');
+  downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8','stall-ledger-'+$('day').value+'.csv');
 };
 render();
 if(window.AndroidLedger) $('app-install').hidden=true;
