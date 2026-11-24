@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>收攤對帳</title>
+<style>
+:root{font:16px/1.5 system-ui,sans-serif;color:#192c23;background:#f4f5ed;color-scheme:light}
+*{box-sizing:border-box} body{margin:0} main{max-width:1080px;margin:auto;padding:clamp(18px,5vw,52px)}
+header{background:#173c2c;color:#fff;border-radius:22px;padding:28px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+h1,h2,p{margin:0} h1{font-size:clamp(2rem,6vw,3.1rem)} header p{color:#d3e9d8}
+.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin:18px 0}
+section{background:#fff;padding:22px;border:1px solid #dbe4d8;border-radius:18px;min-width:0}
+h2{font-size:1.2rem;margin-bottom:12px} label{display:block;font-weight:600}
+button,input,select,textarea{font:inherit;color:inherit;border:1px solid #9caf9e;border-radius:8px;padding:8px 10px;max-width:100%}
+textarea{display:block;width:100%;min-height:110px;margin:6px 0 12px;resize:vertical}
+button{background:#edf4eb;cursor:pointer} button:hover{filter:brightness(.95)} .primary{background:#18543a;color:#fff;border-color:#18543a}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #bd7500;outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;gap:8px} .muted{font-size:.9rem;color:#4f6055}
+dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #e0e9df} dd{margin:0;font-variant-numeric:tabular-nums;font-weight:700}
+#cash{width:100%;margin:6px 0 8px} #difference{font-weight:700} .lead{margin-top:10px}
+.row{display:grid;grid-template-columns:1fr 105px 125px auto;align-items:end;gap:8px;border-top:1px solid #e0e9df;padding:10px 0}
+.row input,.row select{width:100%}.row label{min-width:0;font-size:.88rem}.row .flag{grid-column:1/-1;color:#865109;margin:0}
+.notice{margin-top:8px;min-height:1.5em;color:#865109} .bar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+@media(max-width:730px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr 1fr}.row label:first-child{grid-column:1/-1}}
+</style>
+<main>
+ <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div><label>帳目日期 <input type="date" id="day"></label></header>
+ <div class="grid">
+ <section>
+  <h2>記一筆，或一次講完</h2>
+  <label for="speech">帳目內容</label>
+  <textarea id="speech" placeholder="例如：現金賣了兩千三，LINE Pay 收八百，補貨花四百五"></textarea>
+  <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
+  <p class="muted lead">語音由瀏覽器辨識。若麥克風無法使用，仍可輸入文字。</p>
+  <p id="status" class="notice" role="status"></p>
+  <form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">確認入帳</button></form>
+ </section>
+ <section>
+  <h2>當日收攤</h2>
+  <dl id="totals"></dl>
+  <label for="cash">實點現金（元）</label>
+  <input id="cash" type="number" min="0" step="1" inputmode="numeric" placeholder="輸入收攤時手上的現金">
+  <p id="difference" aria-live="polite"></p>
+  <p class="muted lead">帳面現金＝找零金＋現金收入－現金支出。電子支付另計。</p>
+ </section>
+ </div>
+ <section><div class="bar"><h2>已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
+ <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const types = {float:'找零金',cashIn:'現金收入',digitalIn:'電子收入',cashOut:'現金支出',digitalOut:'電子支出'};
+const example = '早上找零金放了五百，下午現金賣了兩千三，LINE Pay 收八百，補貨花四百五。';
+const key = 'stall-ledger-v1';
+const date = new Date();
+$('day').value = [date.getFullYear(), date.getMonth()+1, date.getDate()].map(n=>String(n).padStart(2,'0')).join('-');
+let records = {};
+try { records = JSON.parse(localStorage.getItem(key) || '{}') || {}; }
+catch { $('storage').textContent = '瀏覽器無法讀取舊紀錄。'; }
+const today = () => records[$('day').value] ??= {entries:[], cash:''};
+function save(){
+  try { localStorage.setItem(key,JSON.stringify(records)); }
+  catch { $('storage').textContent = '瀏覽器無法保存帳目，請先匯出 CSV 再關閉。'; }
+}
+const digits = Object.fromEntries([... '零一二三四五六七八九'].map((x,i)=>[x,i]));
+Object.assign(digits,{兩:2,两:2,〇:0});
+function amount(token){
+  if (/^\d/.test(token)) return Number(token.replaceAll(',',''));
+  const pattern = /^(?:(?:[一二三四五六七八九兩两]?[十])|(?:[一二三四五六七八九兩两][千百萬万]))(?:[零〇一二三四五六七八九兩两十百千萬万]*[一二三四五六七八九兩两十百千萬万])?$/;
+  if ([...token].every(ch=>ch in digits)) return Number([...token].map(ch=>digits[ch]).join(''));
+  if (!pattern.test(token)) return NaN;
+  const units = {十:10,百:100,千:1000,萬:10000,万:10000};
+  let total=0, group=0, digit=0, last=0, zero=false;
+  for (const ch of token){
+    if (ch in digits){ digit=digits[ch]; if (!digit) zero=true; continue; }
+    const unit=units[ch];
+    if (unit===10000){ total+=(group+digit)*unit; group=0; }
+    else group+=(digit || 1)*unit;
+    digit=0; zero=false; last=unit;
+  }
+  return total+group+digit*(last>=100 && !zero ? last/10 : 1);
+}
+function parseLine(note){
+  const digital=/line\s*pay|街口|電子支付|轉帳|刷卡|悠遊卡|全支付/i.test(note);
+  const outgoing=/支出|補貨|付了|付\s*\d|花|成本|買了|買進|進貨|退款/.test(note);
+  const incoming=/收入|賣|收了|收到|收\s*[\d零一二三四五六七八九兩十百千萬]|營業額|入帳/.test(note);
+  const float=/找零金|備用金|起始現金/.test(note);
+  const uncertain=/大概|差不多|左右|可能|不確定|多一點|多塊|多元|多萬|多千|多百|\d\s*多(?=\s|$)|到\s*[\d一二三四五六七八九兩十百千萬]/.test(note);
+  const sums=note.replace(/找零金/g,'').match(/\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|[零〇一二三四五六七八九兩两十百千萬万]+/g) || [];
+  const value=sums.length===1 ? amount(sums[0]) : NaN;
+  const type=float && !outgoing && !incoming ? 'float' : outgoing!==incoming && !float ? (outgoing ? (digital?'digitalOut':'cashOut') : (digital?'digitalIn':'cashIn')) : '';
+  const ambiguous=uncertain || !Number.isSafeInteger(value) || value<=0 || /\d\s*[萬千百]|[\d萬千百十]點[零一二三四五六七八九\d]/.test(note);
+  return {note, type, value:ambiguous?'':value, flag:ambiguous?'請核對並填入確切金額。':!type?'請選擇帳目類型。':''};
+}
+function parseText(source){
+  return source.normalize('NFKC').replace(/(?<!\d),|,(?!\d{3}(?:\D|$))/g,'，')
+    .split(/[，、；;。！!？?\n]+/).map(x=>x.trim()).filter(Boolean).map(parseLine);
+}
+function control(tag, text, attributes={}){
+  const element=document.createElement(tag);
+  if(text) element.textContent=text;
+  for(const [name,value] of Object.entries(attributes)) element.setAttribute(name,value);
+  return element;
+}
+function field(label,input){
+  const box=control('label',label); box.append(input); return box;
+}
+function row(item, onRemove, editing=false){
+  const box=control('div','',{class:'row'});
+  const note=control('input','',{required:'',maxlength:240}); note.value=item.note;
+  const value=control('input','',{type:'number',min:1,step:1,max:999999999,required:'',inputmode:'numeric'}); value.value=item.value;
+  const type=control('select','',{required:''});
+  type.append(control('option','請選擇',{value:''}),...Object.entries(types).map(([value,label])=>control('option',label,{value})));
+  type.value=item.type;
+  const remove=control('button',editing?'刪除':'移除',{type:'button'});
+  remove.onclick=()=>onRemove(box);
+  box.append(field('摘要',note),field('金額（元）',value),field('類型',type),remove);
+  if(item.flag) box.append(control('p',item.flag,{class:'flag'}));
+  box.read=()=>({note:note.value.trim(),type:type.value,value:value.valueAsNumber});
+  return box;
+}
+function addDraft(item){
+  $('draft').append(row(item, box=>{box.remove();$('review').hidden=!$('draft').children.length;}));
+  $('review').hidden=false;
+}
+const format = value => 'NT$ '+value.toLocaleString('zh-TW');
+function sums(entries){
+  const totals=Object.fromEntries(Object.keys(types).map(type=>[type,0]));
+  for(const item of entries) totals[item.type]+=item.value;
+  return {...totals, expected:totals.float+totals.cashIn-totals.cashOut,
+    net:totals.cashIn+totals.digitalIn-totals.cashOut-totals.digitalOut};
+}
+function showTotals(){
+  const current=today();
+  const totals=sums(current.entries);
+  $('totals').replaceChildren(...Object.entries({...types,net:'收支淨額',expected:'帳面應有現金'}).map(([key,label])=>{
+    const line=control('div'); line.append(control('dt',label),control('dd',format(totals[key]))); return line;
+  }));
+  const diff=Number(current.cash)-totals.expected;
+  $('difference').textContent=current.cash===''?'':diff===0?'現金相符':diff>0?'現金多 '+format(diff):'現金少 '+format(-diff);
+}
+function render(){
+  $('cash').value=today().cash;
+  showTotals();
+  $('entries').replaceChildren();
+  if(!today().entries.length) $('entries').append(control('p','這一天還沒有帳目。',{class:'muted'}));
+  for(const [i,item] of today().entries.entries()){
+    const form=control('form');
+    const edit=row(item,()=>{if(confirm('刪除這筆帳目？')){today().entries.splice(i,1);save();render();}},true);
+    const update=control('button','儲存更正',{hidden:''});
+    edit.oninput=()=>{update.hidden=false;};
+    form.onsubmit=event=>{
+      event.preventDefault();
+      const value=edit.read();
+      if(!value.note){$('storage').textContent='請輸入摘要。';return;}
+      today().entries[i]=value;save();render();
+    };
+    form.append(edit,update);
+    $('entries').append(form);
+  }
+  $('export').disabled=!today().entries.length;
+}
+$('day').onchange=()=>{
+  if(!$('day').value){$('day').value=$('day').dataset.previous;return;}
+  $('day').dataset.previous=$('day').value;
+  render();
+  if(!$('review').hidden) $('status').textContent='入帳日期已切換為 '+$('day').value+'，請確認。';
+};
+$('day').dataset.previous=$('day').value;
+$('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();}};
+$('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
+$('manual').onclick=()=>addDraft({note:'',type:'',value:''});
+$('parse').onclick=()=>{
+  const items=parseText($('speech').value);
+  if(!items.length){$('status').textContent='請先輸入帳目內容。';return;}
+  if($('draft').children.length && !confirm('用這次拆出的帳目取代目前草稿？')) return;
+  $('draft').replaceChildren();
+  items.forEach(addDraft);
+  $('status').textContent='拆出 '+items.length+' 筆，請核對金額與類型。';
+};
+$('review').onsubmit=event=>{
+  event.preventDefault();
+  const items=[...$('draft').children].map(box=>box.read());
+  if(items.some(item=>!item.note)){ $('status').textContent='請填寫每筆帳目的摘要。';return;}
+  today().entries.push(...items);
+  save();
+  $('draft').replaceChildren(); $('review').hidden=true; $('speech').value='';
+  $('status').textContent='已入帳 '+items.length+' 筆。';
+  render();
+};
+$('mic').onclick=()=>{
+  const Speech=window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Speech){$('status').textContent='此瀏覽器未提供語音辨識，可使用手機鍵盤的麥克風。';return;}
+  const recognition=new Speech();
+  recognition.lang='zh-TW';
+  recognition.onstart=()=>{$('mic').disabled=true;$('status').textContent='正在聆聽，請開始說話。';};
+  recognition.onresult=event=>{
+    const transcript=event.results[0][0].transcript;
+    $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
+    $('status').textContent='語音已轉文字，核對後可拆成帳目。';
+  };
+  recognition.onerror=()=>{$('status').textContent='語音辨識未取得文字，可改用鍵盤麥克風或手動輸入。';};
+  recognition.onend=()=>{$('mic').disabled=false;};
+  try{recognition.start();}catch{$('status').textContent='語音功能目前無法啟動。';}
+};
+$('export').onclick=()=>{
+  const quote=value=>'"'+String(value).replace(/^[\s]*[=+\-@]/, match=>"'"+match).replaceAll('"','""')+'"';
+  const lines=[['日期','摘要','類型','金額'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value])];
+  const url=URL.createObjectURL(new Blob(['\uFEFF',lines.map(line=>line.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
+  const link=control('a','',{href:url,download:'stall-ledger-'+$('day').value+'.csv'});
+  link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+render();
+</script>
+</html>
