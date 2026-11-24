@@ -43,10 +43,7 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p id="status" class="notice" role="status"></p>
-  <div class="lead"><label for="favorites">常用支出</label><div class="actions">
- <select id="favorites"><option>包材</option><option>瓦斯</option><option>食材批發</option><option>攤位費</option></select>
- <button id="add-favorite" type="button">加入待確認</button>
- </div></div><form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">全部確認入帳</button></form>
+  <form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">全部確認入帳</button></form>
  </section>
  <section>
   <h2>當日收攤</h2>
@@ -298,7 +295,6 @@ function addDraft(item){
   $('draft').append(row(item, box=>{box.remove();$('review').hidden=!$('draft').children.length;}));
   $('review').hidden=false;
 }
-$('add-favorite').onclick=()=>addDraft({note:$('favorites').value,type:'cashOut',value:''});
 const floatDefault=$('float-default');
 floatDefault.value=pref('float-default') || '';
 floatDefault.onchange=()=>{if(floatDefault.validity.valid)pref('float-default',floatDefault.value);};
