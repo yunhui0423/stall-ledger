@@ -48,6 +48,16 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
  </div>
  <section><div class="bar"><h2>已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
  <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
+<section class="lead">
+ <h2>備份與還原</h2>
+ <p class="muted">帳目自動存於目前的瀏覽器。換裝置或清除瀏覽器資料前，請下載完整備份。</p>
+ <div class="actions lead">
+  <button id="backup" type="button">下載全部帳目</button>
+  <button id="restore" type="button">匯入備份</button>
+  <input id="backup-file" type="file" accept=".json,application/json" hidden>
+ </div>
+ <p id="backup-status" class="notice" role="status"></p>
+</section>
 </main>
 <script>
 'use strict';
@@ -206,12 +216,68 @@ $('mic').onclick=()=>{
   recognition.onend=()=>{$('mic').disabled=false;};
   try{recognition.start();}catch{$('status').textContent='語音功能目前無法啟動。';}
 };
+function readBackup(text){
+  const backup=JSON.parse(text);
+  if(backup?.format!=='stall-ledger' || backup.version!==1 || !backup.days ||
+      typeof backup.days!=='object' || Array.isArray(backup.days)){
+    throw new Error('請選擇由收攤對帳下載的 JSON 備份。');
+  }
+  for(const [day,data] of Object.entries(backup.days)){
+    const parsed=new Date(day);
+    const validDay=/^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(+parsed) && parsed.toISOString().startsWith(day);
+    const validCash=typeof data?.cash==='string' && (data.cash==='' ||
+      (data.cash.trim()!=='' && Number.isSafeInteger(Number(data.cash)) && Number(data.cash)>=0));
+    const validEntries=Array.isArray(data?.entries) && data.entries.every(item=>
+      typeof item?.note==='string' && item.note.trim()!=='' && item.note.length<=240 &&
+      Object.hasOwn(types,item.type) && Number.isSafeInteger(item.value) && item.value>0 && item.value<=999999999);
+    if(!validDay || !validCash || !validEntries) throw new Error('備份中有無效的日期或帳目。');
+  }
+  return backup.days;
+}
+function mergeBackup(current,incoming){
+  const merged={...current};
+  let added=0, skipped=0;
+  for(const [day,data] of Object.entries(incoming)){
+    const existing=merged[day];
+    if(existing && (existing.entries.length || existing.cash!=='')){ skipped++; continue; }
+    if(!data.entries.length && data.cash==='') continue;
+    merged[day]=data;
+    added++;
+  }
+  return {merged,added,skipped};
+}
+$('backup').onclick=()=>{
+  const backup=JSON.stringify({format:'stall-ledger',version:1,days:records},null,2);
+  downloadFile(backup,'application/json','stall-ledger-backup-'+$('day').value+'.json');
+  $('backup-status').textContent='已產生完整備份，包含各日帳目及實點現金。';
+};
+$('restore').onclick=()=>$('backup-file').click();
+$('backup-file').onchange=async event=>{
+  const file=event.target.files[0];
+  event.target.value='';
+  if(!file) return;
+  try {
+    const {merged,added,skipped}=mergeBackup(records,readBackup(await file.text()));
+    if(added){
+      localStorage.setItem(key,JSON.stringify(merged));
+      records=merged;
+      render();
+    }
+    $('backup-status').textContent='已還原 '+added+' 天。'+(skipped?'目前已有帳目的 '+skipped+' 天已保留。':'');
+  } catch(error){
+    $('backup-status').textContent=error instanceof SyntaxError?'備份檔案格式錯誤。':error.name==='QuotaExceededError'?'瀏覽器空間不足，無法還原。':error.message;
+  }
+};
+function downloadFile(body,mime,filename){
+  const url=URL.createObjectURL(new Blob([body],{type:mime}));
+  const link=control('a','',{href:url,download:filename});
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 $('export').onclick=()=>{
   const quote=value=>'"'+String(value).replace(/^[\s]*[=+\-@]/, match=>"'"+match).replaceAll('"','""')+'"';
   const lines=[['日期','摘要','類型','金額'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value])];
-  const url=URL.createObjectURL(new Blob(['\uFEFF',lines.map(line=>line.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
-  const link=control('a','',{href:url,download:'stall-ledger-'+$('day').value+'.csv'});
-  link.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  downloadFile('\uFEFF'+lines.map(line=>line.map(quote).join(',')).join('\r\n'),'text/csv;charset=utf-8','stall-ledger-'+$('day').value+'.csv');
 };
 render();
 </script>
