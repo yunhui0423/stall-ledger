@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' version '8.9.2' }
+
+android {
+    namespace 'io.github.yunhui0423.stallledger'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'io.github.yunhui0423.stallledger'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+    }
+    sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/ledgerAssets'))
+}
+
+def stageLedger = tasks.register('stageLedger', Copy) {
+    from(rootProject.file('../index.html'))
+    into(layout.buildDirectory.dir('generated/ledgerAssets'))
+}
+tasks.named('preBuild').configure { dependsOn(stageLedger) }
+
+dependencies { implementation 'androidx.webkit:webkit:1.13.0' }
