@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "收攤對帳",
+  "short_name": "收攤對帳",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#173c2c",
+  "background_color": "#f4f5ed",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
