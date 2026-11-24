@@ -30,6 +30,8 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #history-list{overflow-x:auto;margin-top:12px} #history-list table{border-collapse:collapse;width:100%;white-space:nowrap}
 #history-list th,#history-list td{text-align:left;padding:8px;border-bottom:1px solid #e0e9df}
 #history-month{margin-top:4px}
+.row{grid-template-columns:minmax(120px,1fr) 98px 118px 118px auto}
+@media(max-width:860px){.row{grid-template-columns:1fr 1fr}.row label:first-child{grid-column:1/-1}}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div><label>帳目日期 <input type="date" id="day"></label></header>
@@ -41,11 +43,20 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p id="status" class="notice" role="status"></p>
-  <form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">確認入帳</button></form>
+  <div class="lead"><label for="favorites">常用支出</label><div class="actions">
+ <select id="favorites"><option>包材</option><option>瓦斯</option><option>食材批發</option><option>攤位費</option></select>
+ <button id="add-favorite" type="button">加入待確認</button>
+ </div></div><form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">全部確認入帳</button></form>
  </section>
  <section>
   <h2>當日收攤</h2>
-  <dl id="totals"></dl>
+ <details class="lead"><summary>快速帶入找零金</summary>
+ <label for="float-default" class="lead">預設找零金（元）</label>
+ <input id="float-default" type="number" min="1" max="999999999" step="1" inputmode="numeric">
+ <div class="actions lead"><button id="float-use" type="button">帶入預設</button>
+ <button id="float-prev" type="button">沿用昨日找零金</button></div>
+ <p id="float-status" class="notice" role="status"></p></details>
+  <dl id="totals"></dl><dl id="payment-totals" aria-label="付款方式彙總"></dl>
   <label for="cash">實點現金（元）</label>
   <input id="cash" type="number" min="0" step="1" inputmode="numeric" placeholder="輸入收攤時手上的現金">
   <p id="difference" aria-live="polite"></p>
@@ -74,7 +85,7 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <div class="bar"><h2>月報與歷史帳目</h2><button id="export-month" type="button">匯出月報 CSV</button></div>
  <label for="history-month">查詢月份</label><input id="history-month" type="month">
  <dl id="month-totals" class="lead"></dl>
- <div id="history-list"></div>
+ <p id="history-discrepancy" class="muted"></p><div id="history-list"></div>
 </section>
 <section class="lead">
  <h2>備份與還原</h2>
@@ -84,7 +95,7 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <button id="restore" type="button">匯入備份</button>
   <input id="backup-file" type="file" accept=".json,application/json" hidden>
  </div>
- <p id="backup-status" class="notice" role="status"></p>
+ <p id="backup-reminder" class="muted lead"></p><p id="backup-status" class="notice" role="status"></p>
 </section>
 <details class="lead" id="app-install">
  <summary>安裝到手機主畫面</summary>
@@ -103,6 +114,23 @@ $('day').value = [date.getFullYear(), date.getMonth()+1, date.getDate()].map(n=>
 let records = {};
 try { records = JSON.parse(localStorage.getItem(key) || '{}') || {}; }
 catch { $('storage').textContent = '瀏覽器無法讀取舊紀錄。'; }
+const pref=(name,value)=>{
+  try{
+    if(value===undefined) return localStorage.getItem(key+'-'+name);
+    localStorage.setItem(key+'-'+name,value);
+  } catch {}
+  return null;
+};
+const methods={line:'LINE Pay',jko:'街口支付',transfer:'轉帳',card:'刷卡',other:'其他電子支付'};
+function payment(item){
+  if(!item.type.startsWith('digital')) return '';
+  if(Object.hasOwn(methods,item.method)) return item.method;
+  if(/line\s*pay/i.test(item.note)) return 'line';
+  if(/街口/.test(item.note)) return 'jko';
+  if(/轉帳|transfer/i.test(item.note)) return 'transfer';
+  if(/刷卡|\bcard\b/i.test(item.note)) return 'card';
+  return 'other';
+}
 const today = () => records[$('day').value] ??= {entries:[], cash:''};
 function save(){
   try { localStorage.setItem(key,JSON.stringify(records)); }
@@ -250,16 +278,49 @@ function row(item, onRemove, editing=false){
   type.value=item.type;
   const remove=control('button',editing?'刪除':'移除',{type:'button'});
   remove.onclick=()=>onRemove(box);
-  box.append(field('摘要',note),field('金額（元）',value),field('類型',type),remove);
+  const method=control('select');
+  method.append(...Object.entries(methods).map(([value,label])=>control('option',label,{value})));
+  const methodField=field('付款方式',method);
+  const updateMethod=()=>{methodField.hidden=!type.value.startsWith('digital');};
+  method.value=payment(item) || 'other';
+  type.addEventListener('change',()=>{
+    if(type.value.startsWith('digital')) method.value=payment({type:type.value,note:note.value});
+    updateMethod();
+  });
+  updateMethod();
+  box.append(field('摘要',note),field('金額（元）',value),field('類型',type),methodField,remove);
   if(!item.flag && item.type==='unpaid') box.append(control('p','這筆列為未收款，收到後可更正為現金或電子收入。',{class:'flag'}));
   if(item.flag) box.append(control('p',item.flag,{class:'flag'}));
-  box.read=()=>({note:note.value.trim(),type:type.value,value:value.valueAsNumber});
+  box.read=()=>({note:note.value.trim(),type:type.value,value:value.valueAsNumber,...(type.value.startsWith('digital')?{method:method.value}:{})});
   return box;
 }
 function addDraft(item){
   $('draft').append(row(item, box=>{box.remove();$('review').hidden=!$('draft').children.length;}));
   $('review').hidden=false;
 }
+$('add-favorite').onclick=()=>addDraft({note:$('favorites').value,type:'cashOut',value:''});
+const floatDefault=$('float-default');
+floatDefault.value=pref('float-default') || '';
+floatDefault.onchange=()=>{if(floatDefault.validity.valid)pref('float-default',floatDefault.value);};
+function draftFloat(value){
+  const status=$('float-status');
+  if(!Number.isSafeInteger(value) || value<=0 || value>999999999){
+    status.textContent='沒有可帶入的找零金，請確認金額。';return;
+  }
+  if(today().entries.some(item=>item.type==='float') ||
+    [...$('draft').children].some(row=>row.read().type==='float')){
+    status.textContent='這一天已有找零金或待確認的找零金，請直接更正該筆。';return;
+  }
+  addDraft({note:'起始找零金',type:'float',value});
+  status.textContent='已加入待確認清單。';
+}
+$('float-use').onclick=()=>draftFloat(floatDefault.valueAsNumber);
+$('float-prev').onclick=()=>{
+  const yesterday=new Date($('day').value+'T00:00:00Z');
+  yesterday.setUTCDate(yesterday.getUTCDate()-1);
+  const entries=records[yesterday.toISOString().slice(0,10)]?.entries ?? [];
+  draftFloat(sums(entries).float);
+};
 const format = value => 'NT$ '+value.toLocaleString('zh-TW');
 function sums(entries){
   const totals=Object.fromEntries(Object.keys(types).map(type=>[type,0]));
@@ -285,6 +346,14 @@ monthInput.value=$('day').value.slice(0,7);
 function renderMonth(){
   const rows=monthRows(records,monthInput.value);
   $('export-month').disabled=!rows.length;
+  const mismatches=rows.filter(row=>row.diff!==null && row.diff!==0);
+  const counts=new Map();
+  for(const row of mismatches){
+    const reason=row.reason || '未標記';
+    counts.set(reason,(counts.get(reason) || 0)+1);
+  }
+  const breakdown=[...counts].sort((a,b)=>b[1]-a[1]).map(([reason,n])=>reason+' '+n+' 天');
+  $('history-discrepancy').textContent='已實點 '+rows.filter(row=>row.cash!==null).length+' 天，差額 '+mismatches.length+' 天'+(breakdown.length?'（'+breakdown.join('、')+'）':'')+'。';
   $('month-totals').replaceChildren(...Object.entries(monthFields).slice(0,4).map(([key,label])=>{
     const line=control('div');
     line.append(control('dt',label),control('dd',format(rows.reduce((sum,row)=>sum+row[key],0))));
@@ -316,13 +385,26 @@ $('export-month').onclick=()=>{
   const lines=[['日期',...Object.values(monthFields),'差額原因','備註'],
     ...rows.map(row=>[row.day,...Object.keys(monthFields).map(key=>row[key]??''),row.reason,row.note])];
   downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),
-    'text/csv;charset=utf-8','stall-ledger-month-'+monthInput.value+'.csv');
+    'text/csv;charset=utf-8','收攤對帳_'+monthInput.value+'.csv');
 };
 function showTotals(){
   const current=today();
   const totals=sums(current.entries);
   $('totals').replaceChildren(...Object.entries({...types,net:'收支淨額',expected:'帳面應有現金'}).map(([key,label])=>{
     const line=control('div'); line.append(control('dt',label),control('dd',format(totals[key]))); return line;
+  }));
+  const methodSums=new Map();
+  for(const item of current.entries){
+    const method=payment(item);
+    if(!method) continue;
+    const row=methodSums.get(method) || {income:0,expense:0};
+    row[item.type==='digitalIn'?'income':'expense']+=item.value;
+    methodSums.set(method,row);
+  }
+  $('payment-totals').replaceChildren(...[...methodSums].map(([key,row])=>{
+    const line=control('div');
+    line.append(control('dt',methods[key]),control('dd','收 '+format(row.income)+' ／ 付 '+format(row.expense)));
+    return line;
   }));
   const diff=Number(current.cash)-totals.expected;
   const checks=[];
@@ -349,6 +431,7 @@ function render(){
   $('incident-status').textContent='';
   showTotals();
   renderMonth();
+  updateBackupReminder();
   $('entries').replaceChildren();
   if(!today().entries.length) $('entries').append(control('p','這一天還沒有帳目。',{class:'muted'}));
   for(const [i,item] of today().entries.entries()){
@@ -459,6 +542,7 @@ function readBackup(text){
     const validCash=typeof data?.cash==='string' && (data.cash==='' ||
       (data.cash.trim()!=='' && Number.isSafeInteger(Number(data.cash)) && Number(data.cash)>=0));
     const validEntries=Array.isArray(data?.entries) && data.entries.every(item=>
+      (item?.method===undefined || Object.hasOwn(methods,item.method)) &&
       typeof item?.note==='string' && item.note.trim()!=='' && item.note.length<=240 &&
       Object.hasOwn(types,item.type) && Number.isSafeInteger(item.value) && item.value>0 && item.value<=999999999);
     const incident=data?.incident;
@@ -480,9 +564,21 @@ function mergeBackup(current,incoming){
   }
   return {merged,added,skipped};
 }
+function updateBackupReminder(){
+  const timestamp=Number(pref('backup-at'));
+  const count=Object.values(records).reduce((sum,day)=>sum+day.entries.length,0);
+  const age=Date.now()-timestamp;
+  const recent=timestamp>0?'最近產生備份：'+new Date(timestamp).toLocaleString('zh-TW')+'。':'尚未產生備份。';
+  const previousCount=Number(pref('backup-count'));
+  const remind=count>0 && (!timestamp || age>=7*86400000 || count-previousCount>=20);
+  $('backup-reminder').textContent=recent+(remind?' 建議下載完整備份並確認檔案已保存。':'');
+}
 $('backup').onclick=()=>{
   const backup=JSON.stringify({format:'stall-ledger',version:1,days:records},null,2);
   downloadFile(backup,'application/json','stall-ledger-backup-'+$('day').value+'.json');
+  pref('backup-at',String(Date.now()));
+  pref('backup-count',String(Object.values(records).reduce((sum,day)=>sum+day.entries.length,0)));
+  updateBackupReminder();
   $('backup-status').textContent='已產生完整備份，包含各日帳目及實點現金。';
 };
 $('restore').onclick=()=>$('backup-file').click();
@@ -514,8 +610,8 @@ function downloadFile(body,mime,filename){
 }
 const csvCell=value=>'"'+String(value).replace(/^[\s]*[=+\-@]/, match=>"'"+match).replaceAll('"','""')+'"';
 $('export').onclick=()=>{
-  const lines=[['日期','摘要','類型','金額'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value])];
-  downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8','stall-ledger-'+$('day').value+'.csv');
+  const lines=[['日期','摘要','類型','金額','付款方式'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value,methods[payment(item)] || (item.type.startsWith('cash') || item.type==='float'?'現金':'')])];
+  downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8','收攤對帳_'+$('day').value+'.csv');
 };
 render();
 if(window.AndroidLedger) $('app-install').hidden=true;
