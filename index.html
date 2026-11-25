@@ -143,6 +143,8 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 .setup-help h3{margin-top:0}
 #category-panel{border:1px solid var(--line);border-radius:11px;padding:10px}
 #settings-form>.muted{margin-top:8px}
+#review-title,#posted-title{scroll-margin-top:12px}
+#posted-status:not(:empty){margin-top:8px;color:var(--accent);font-weight:650}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -183,6 +185,7 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   <textarea id="speech" placeholder="例如：現金賣了兩千三，LINE Pay 收八百，補貨花四百五"></textarea>
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
+  <p class="muted lead">拆帳後會先列出待確認帳目。會計科目可在草稿上修改。</p>
   <p id="status" class="notice" role="status"></p>
  <details class="lead"><summary>開攤備用現金</summary>
  <p class="muted lead" id="float-default-info"></p>
@@ -197,14 +200,14 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
  </section>
  <section id="review-panel" hidden aria-labelledby="review-title">
   <form id="review">
-   <div class="review-heading"><h2 id="review-title">確認後入帳</h2><p id="review-meta"></p></div>
-   <div id="draft"></div>
-   <div class="review-footer"><p class="muted">核對摘要、金額與類型後再入帳。</p><button class="primary" type="submit">全部確認入帳</button></div>
+   <div class="review-heading"><h2 id="review-title" tabindex="-1">待確認帳目</h2><p id="review-meta"></p></div>
+   <p id="review-status" class="notice" role="status"></p><div id="draft"></div>
+   <div class="review-footer"><p class="muted">核對金額、付款方式和會計科目後，按「全部確認入帳」。</p><button class="primary" type="submit">全部確認入帳</button></div>
   </form>
  </section>
 
- <section class="posted-panel"><div class="bar"><h2>已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
- <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
+ <section class="posted-panel"><div class="bar"><h2 id="posted-title" tabindex="-1">已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
+ <p id="posted-status" class="muted" role="status"></p><div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
 
  </div>
  <div id="closeout-work" class="workspace" hidden>
@@ -598,6 +601,21 @@ function updateReview(){
   $('review-panel').hidden=!count;
   $('review-meta').textContent=$('day').value+' · '+count+' 筆待確認';
 }
+function focusLedgerHeading(id){
+  const heading=$(id);
+  if(heading.getClientRects().length){
+    heading.focus({preventScroll:true});
+    heading.scrollIntoView({block:'start'});
+  }
+}
+function showParsedDrafts(items,source){
+  const recommended=addParsedDrafts(items);
+  const message=source+' '+items.length+' 筆待確認，已推薦 '+recommended+' 筆會計科目。';
+  $('posted-status').textContent='';
+  $('status').textContent=message;
+  $('review-status').textContent=message+(items.some(item=>item.flag)?'請先補齊待確認欄位。':'');
+  focusLedgerHeading('review-title');
+}
 function addParsedDrafts(items){
   let recommended=0;
   for(const item of items){
@@ -969,6 +987,7 @@ function render(){
 $('day').onchange=()=>{
   if(!$('day').value){$('day').value=$('day').dataset.previous;return;}
   $('day').dataset.previous=$('day').value;
+  $('posted-status').textContent='';
   render();
   updateReview();
   if(!$('review-panel').hidden) $('status').textContent='入帳日期已切換為 '+$('day').value+'，請確認。';
@@ -1043,27 +1062,32 @@ $('parse').onclick=()=>{
   if(!items.length){$('status').textContent='請先輸入帳目內容。';return;}
   if($('draft').children.length && !confirm('用這次拆出的帳目取代目前草稿？')) return;
   $('draft').replaceChildren();
-  const recommended=addParsedDrafts(items);
-  $('status').textContent='拆出 '+items.length+' 筆，已推薦 '+recommended+' 筆會計科目。'+(items.some(item=>item.flag)?'有欄位待確認，請先補上。':'請核對金額與類型。');
+  showParsedDrafts(items,'已拆出');
 };
 $('review').onsubmit=event=>{
   event.preventDefault();
   const items=[...$('draft').children].map(box=>box.read());
-  if(items.some(item=>!item.note)){ $('status').textContent='請填寫每筆帳目的摘要。';return;}
-  today().entries.push(...items);
-  save();
+  if(!items.length) return;
+  if(items.some(item=>!item.note)){ $('review-status').textContent='請填寫每筆帳目的摘要。';return;}
+  const day=$('day').value;
+  const current=today();
+  const next={...records,[day]:{...current,entries:[...current.entries,...items]}};
+  try{persist(next);}
+  catch{$('review-status').textContent='目前無法儲存。草稿已保留，請稍後再試。';return;}
+  records=next;
   $('draft').replaceChildren(); updateReview(); $('speech').value='';
-  $('status').textContent='已入帳 '+items.length+' 筆。';
+  $('review-status').textContent='';
+  $('status').textContent='';
   render();
+  $('posted-status').textContent='已入帳 '+items.length+' 筆（'+day+'）。';
+  focusLedgerHeading('posted-title');
 };
 function draftSpeech(transcript){
   if(!transcript){$('status').textContent='沒有取得語音辨識結果，請再試一次。';return;}
   $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
   const items=parseText(transcript);
-  const recommended=addParsedDrafts(items);
-  $('status').textContent=items.length
-    ? '語音已自動拆出 '+items.length+' 筆，已推薦 '+recommended+' 筆會計科目。'+(items.some(item=>item.flag)?'請補齊待確認欄位。':'請核對後入帳。')
-    : '沒有辨識到可拆分的語音，請再說一次。';
+  if(items.length) showParsedDrafts(items,'語音已拆出');
+  else $('status').textContent='沒有辨識到可拆分的語音，請再說一次。';
 }
 window.receiveAndroidSpeech=transcript=>{
   $('mic').disabled=false;
