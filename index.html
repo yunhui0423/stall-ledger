@@ -78,6 +78,25 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
  </div>
  <section><div class="bar"><h2>已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
  <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
+<div class="grid">
+<section>
+ <h2>記帳日記</h2>
+ <form id="journal-form"><label for="journal">當日備忘</label>
+ <textarea id="journal" maxlength="2000" placeholder="記下今天的生意、特殊交易或明天要追的款項"></textarea>
+ <button>儲存日記</button><p id="journal-status" class="notice" role="status"></p></form>
+</section>
+<section>
+ <h2>存款分配</h2>
+ <p class="muted">記錄收攤後打算怎麼分配現金。分配金額不會列入營業支出。</p>
+ <form id="allocation-form" class="lead">
+  <label>存入銀行（元） <input id="alloc-bank" type="number" min="0" max="999999999" step="1" inputmode="numeric"></label>
+  <label>下次找零金（元） <input id="alloc-float" type="number" min="0" max="999999999" step="1" inputmode="numeric"></label>
+  <label>留作營運周轉（元） <input id="alloc-reserve" type="number" min="0" max="999999999" step="1" inputmode="numeric"></label>
+  <p id="allocation-total" class="lead" aria-live="polite"></p>
+  <button>儲存分配</button><p id="allocation-status" class="notice" role="status"></p>
+ </form>
+</section>
+</div>
 <section class="lead">
  <div class="bar"><h2>月報與歷史帳目</h2><button id="export-month" type="button">匯出月報 CSV</button></div>
  <label for="history-month">查詢月份</label><input id="history-month" type="month">
@@ -324,9 +343,51 @@ function sums(entries){
   return {...totals, expected:totals.float+totals.cashIn-totals.cashOut,
     net:totals.cashIn+totals.digitalIn-totals.cashOut-totals.digitalOut};
 }
+const allocationFields=['bank','float','reserve'];
+const hasDayNotes=data=>Boolean(data?.journal || data?.allocation);
+const allocationInputs=allocationFields.map(field=>$('alloc-'+field));
+function allocationTotal(){
+  const sum=allocationInputs.reduce((total,input)=>total+(input.valueAsNumber || 0),0);
+  const cash=today().cash;
+  const remaining=Number(cash)-sum;
+  $('allocation-total').textContent='已分配 '+format(sum)+(cash===''?' · 請先輸入實點現金':remaining<0?' · 超出實點 '+format(-remaining):' · 尚未分配 '+format(remaining));
+  return sum;
+}
+function saveDayField(field,value,status){
+  const day=$('day').value;
+  const next={...records,[day]:{...today(),[field]:value}};
+  try{
+    localStorage.setItem(key,JSON.stringify(next));
+    records=next;
+    renderMonth();
+    $(status).textContent='已儲存 '+day+' 的紀錄。';
+  }catch{$(status).textContent='瀏覽器無法儲存，請先備份現有帳目。';}
+}
+$('journal-form').onsubmit=event=>{
+  event.preventDefault();
+  saveDayField('journal',$('journal').value.trim() || undefined,'journal-status');
+};
+allocationInputs.forEach(input=>input.addEventListener('input',allocationTotal));
+$('allocation-form').onsubmit=event=>{
+  event.preventDefault();
+  const sum=allocationTotal();
+  if(sum && (today().cash==='' || sum>Number(today().cash))){
+    $('allocation-status').textContent='請確認分配總額沒有超過當日實點現金。';return;
+  }
+  const amounts=Object.fromEntries(allocationFields.map((field,i)=>[field,allocationInputs[i].valueAsNumber || 0]));
+  saveDayField('allocation',sum?amounts:undefined,'allocation-status');
+};
+function renderDayNotes(){
+  const data=today();
+  $('journal').value=data.journal ?? '';
+  allocationInputs.forEach((input,i)=>{input.value=data.allocation?.[allocationFields[i]] ?? '';});
+  $('journal-status').textContent='';
+  $('allocation-status').textContent='';
+  allocationTotal();
+}
 function monthRows(source, month){
   return Object.entries(source).filter(([day,data])=>day.startsWith(month+'-') &&
-    (data.entries.length || data.cash!=='' || data.incident))
+    (data.entries.length || data.cash!=='' || data.incident || hasDayNotes(data)))
     .sort(([a],[b])=>b.localeCompare(a)).map(([day,data])=>{
       const totals=sums(data.entries);
       return {day,income:totals.cashIn+totals.digitalIn,expense:totals.cashOut+totals.digitalOut,
@@ -419,6 +480,7 @@ function showTotals(){
   $('difference').textContent=current.cash===''?'':diff===0?'現金相符':diff>0?'現金多 '+format(diff):'現金少 '+format(-diff);
 }
 function render(){
+  renderDayNotes();
   const current=today();
   $('cash').value=current.cash;
   $('incident-reason').value=current.incident?.reason ?? '';
@@ -471,7 +533,7 @@ $('incident').onsubmit=event=>{
     $('incident-status').textContent='瀏覽器無法儲存差額紀錄，請稍後再試。';
   }
 };
-$('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();renderMonth();}};
+$('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();renderMonth();allocationTotal();}};
 $('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
 $('manual').onclick=()=>addDraft({note:'',type:'',value:''});
 $('parse').onclick=()=>{
@@ -514,17 +576,48 @@ $('mic').onclick=()=>{
   }
   const Speech=window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!Speech){$('status').textContent='此瀏覽器未提供語音辨識，可使用手機鍵盤的麥克風。';return;}
-  const recognition=new Speech();
+  let recognition;
+  try{recognition=new Speech();}catch{
+    $('status').textContent='無法初始化語音辨識，請用手機的 Chrome 或 Safari 開啟網站再試。';return;
+  }
   recognition.lang='zh-TW';
+  recognition.interimResults=false;
+  let received=false;
+  let failed=false;
+  const date=$('day').value;
+  const mic=$('mic');
+  mic.disabled=true;
+  $('status').textContent='正在啟動麥克風，請允許存取。';
   recognition.onstart=()=>{$('mic').disabled=true;$('status').textContent='正在聆聽，請開始說話。';};
   recognition.onresult=event=>{
     const transcript=Array.from(event.results).slice(event.resultIndex)
       .filter(result=>result.isFinal).map(result=>result[0].transcript).join('，').trim();
+    if(!transcript) return;
+    received=true;
+    if(date!==$('day').value){
+      $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
+      $('status').textContent='錄音時切換了日期，請確認日期後再拆成帳目。';return;
+    }
     draftSpeech(transcript);
   };
-  recognition.onerror=()=>{$('status').textContent='語音辨識未取得文字，可改用鍵盤麥克風或手動輸入。';};
-  recognition.onend=()=>{$('mic').disabled=false;};
-  try{recognition.start();}catch{$('status').textContent='語音功能目前無法啟動。';}
+  recognition.onerror=event=>{
+    failed=true;
+    const messages={'not-allowed':'麥克風未獲允許。請到瀏覽器的網站權限開啟麥克風。',
+      'service-not-allowed':'此瀏覽器封鎖了語音服務。請用手機 Chrome 或 Safari 開啟網站再試。',
+      'audio-capture':'找不到可用麥克風，請確認裝置設定。',
+      network:'語音服務連線失敗，請確認網路後重試。',
+      'no-speech':'沒有聽到語音，請靠近麥克風再說一次。'};
+    $('status').textContent=messages[event.error] || '語音辨識中斷，請再試一次。';
+    mic.disabled=false;
+  };
+  recognition.onend=()=>{
+    mic.disabled=false;
+    if(!received && !failed) $('status').textContent='沒有取得語音結果，請再說一次。';
+  };
+  try{recognition.start();}catch{
+    mic.disabled=false;
+    $('status').textContent='語音功能無法啟動，請重新開啟網頁再試。';
+  }
 };
 function readBackup(text){
   const backup=JSON.parse(text);
@@ -544,7 +637,12 @@ function readBackup(text){
     const incident=data?.incident;
     const validIncident=incident===undefined || (incident && typeof incident.note==='string' &&
       incident.note.length<=500 && ['', '找錯錢','疑似詐騙','漏記交易','原因不明','其他'].includes(incident.reason));
-    if(!validDay || !validCash || !validEntries || !validIncident) throw new Error('備份中有無效的日期或帳目。');
+    const validNotes=(data?.journal===undefined || (typeof data.journal==='string' && data.journal.length<=2000)) &&
+      (data?.allocation===undefined || (data.allocation && allocationFields.every(field=>{
+        const amount=data.allocation[field];
+        return Number.isSafeInteger(amount) && amount>=0 && amount<=999999999;
+      })));
+    if(!validDay || !validCash || !validEntries || !validIncident || !validNotes) throw new Error('備份中有無效的日期或帳目。');
   }
   return backup.days;
 }
@@ -553,8 +651,8 @@ function mergeBackup(current,incoming){
   let added=0, skipped=0;
   for(const [day,data] of Object.entries(incoming)){
     const existing=merged[day];
-    if(existing && (existing.entries.length || existing.cash!=='' || existing.incident)){ skipped++; continue; }
-    if(!data.entries.length && data.cash==='' && !data.incident) continue;
+    if(existing && (existing.entries.length || existing.cash!=='' || existing.incident || hasDayNotes(existing))){ skipped++; continue; }
+    if(!data.entries.length && data.cash==='' && !data.incident && !hasDayNotes(data)) continue;
     merged[day]=data;
     added++;
   }
