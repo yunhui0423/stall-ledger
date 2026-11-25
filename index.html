@@ -145,6 +145,9 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 #settings-form>.muted{margin-top:8px}
 #review-title,#posted-title{scroll-margin-top:12px}
 #posted-status:not(:empty){margin-top:8px;color:var(--accent);font-weight:650}
+#receipt-demo{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+#receipt-demo-orders dl{display:grid;gap:5px;margin:0}
+#receipt-demo-total{font-weight:700;color:var(--accent)}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -192,6 +195,18 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
     <button type="button" id="preset-bank-paid">銀行轉帳・已到帳</button>
    </div>
    <p class="muted lead">選一種收款狀態，填寫金額後確認入帳。</p>
+   <details id="receipt-demo" class="lead">
+    <summary>模擬第三方收款通知</summary>
+    <p class="muted lead">示範用的訂單與通知，不會寫入帳本。</p>
+    <div id="receipt-demo-orders" class="lead"></div>
+    <div class="actions lead">
+     <button type="button" id="demo-cod">送出物流撥款通知</button>
+     <button type="button" id="demo-transfer">送出銀行到帳通知</button>
+     <button type="button" id="demo-repeat" disabled>重送上一則通知</button>
+     <button type="button" id="demo-reset">重置示範</button>
+    </div>
+    <p id="receipt-demo-status" class="notice" role="status"></p>
+   </details>
   </details>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p class="muted lead">拆帳後會先列出待確認帳目。會計科目可在草稿上修改。</p>
@@ -1096,6 +1111,59 @@ for(const [id,item] of Object.entries(receiptPresets)){
     focusLedgerHeading('review-title');
   };
 }
+const demoOrders=[
+  {id:'COD-001',label:'貨到付款',amount:800,pending:'待物流撥款'},
+  {id:'BANK-001',label:'銀行轉帳',amount:600,pending:'待確認到帳'}
+];
+const demoNotices={
+  cod:{id:'DEMO-PAYOUT-001',order:'COD-001',amount:800},
+  transfer:{id:'DEMO-TRANSFER-001',order:'BANK-001',amount:600}
+};
+const seenDemoNotices=new Set();
+const settledDemoOrders=new Set();
+let lastDemoNotice=null;
+function renderReceiptDemo(){
+  const host=$('receipt-demo-orders');
+  const details=control('dl');
+  for(const order of demoOrders){
+    const row=control('div');
+    row.append(control('dt',order.id+' · '+order.label+' · '+format(order.amount)),
+      control('dd',settledDemoOrders.has(order.id)?'已到帳':order.pending));
+    details.append(row);
+  }
+  const total=demoOrders.filter(order=>settledDemoOrders.has(order.id))
+    .reduce((sum,order)=>sum+order.amount,0);
+  host.replaceChildren(details,control('p','模擬電子收入 '+format(total),{id:'receipt-demo-total'}));
+  $('demo-repeat').disabled=!lastDemoNotice;
+}
+function receiveDemoNotice(notice){
+  const order=demoOrders.find(item=>item.id===notice.order);
+  if(!order || order.amount!==notice.amount){
+    $('receipt-demo-status').textContent='訂單或金額不符，留待核對。';
+    return;
+  }
+  lastDemoNotice=notice;
+  const repeated=seenDemoNotices.has(notice.id) || settledDemoOrders.has(order.id);
+  if(!repeated){
+    seenDemoNotices.add(notice.id);
+    settledDemoOrders.add(order.id);
+  }
+  renderReceiptDemo();
+  $('receipt-demo-status').textContent=repeated
+    ?'這筆收款已處理，示範收入沒有重複計算。'
+    :'已配對 '+order.id+'，示範收入增加 '+format(notice.amount)+'。';
+}
+$('demo-cod').onclick=()=>receiveDemoNotice(demoNotices.cod);
+$('demo-transfer').onclick=()=>receiveDemoNotice(demoNotices.transfer);
+$('demo-repeat').onclick=()=>{if(lastDemoNotice) receiveDemoNotice(lastDemoNotice);};
+$('demo-reset').onclick=()=>{
+  seenDemoNotices.clear();
+  settledDemoOrders.clear();
+  lastDemoNotice=null;
+  $('receipt-demo-status').textContent='';
+  renderReceiptDemo();
+};
+renderReceiptDemo();
 $('parse').onclick=()=>{
   const items=parseText($('speech').value);
   if(!items.length){$('status').textContent='請先輸入帳目內容。';return;}
