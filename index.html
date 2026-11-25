@@ -77,8 +77,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #incident-list{padding-inline-start:20px}
 #incident-list li{margin-block:8px}
 #incident-list .actions{margin-top:4px}
-#settings{width:min(520px,calc(100% - 24px));max-height:90vh;border:1px solid #b7d1bd;border-radius:14px;padding:16px;color:inherit}
-#settings::backdrop{background:#173c2c66}
+#settings-form{max-width:680px}
 .settings-ratios{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .settings-ratios input{width:100%}
 @media(min-width:861px){.row,#draft .row{grid-template-columns:minmax(120px,2fr) minmax(72px,.8fr) minmax(88px,1fr) minmax(92px,1fr) minmax(104px,1fr) auto}}
@@ -148,46 +147,9 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
   <button type="button" id="nav-closeout" aria-controls="closeout-work" aria-pressed="false">收攤對帳</button>
   <button type="button" id="nav-history" aria-controls="history-view" aria-pressed="false">歷史資料</button>
-  <button type="button" id="open-settings" aria-haspopup="dialog">設定</button>
+  <button type="button" id="nav-settings" aria-controls="settings" aria-pressed="false">設定</button>
  </nav>
- <dialog id="settings" aria-labelledby="settings-title">
-  <div class="bar"><h2 id="settings-title">帳本設定</h2><button id="close-settings" type="button">關閉</button></div>
-  <form id="settings-form">
-   <label>開攤備用現金預設值（元） <input id="settings-float" type="number" min="1" max="999999999" step="1" inputmode="numeric"></label>
-   <fieldset class="lead"><legend>預設存款比例</legend>
-    <div class="settings-ratios">
-     <label>銀行 %<input id="settings-bank" type="number" min="0" max="100" step="0.01"></label>
-     <label>下次找零金 %<input id="settings-float-ratio" type="number" min="0" max="100" step="0.01"></label>
-     <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
-    </div>
-   </fieldset>
-   <fieldset class="lead"><legend>會計科目管理</legend>
-    <p class="muted">可新增、修改或移除任何科目。已入帳紀錄會保留原科目。</p>
-    <div id="category-settings"></div>
-    <button type="button" class="lead" id="add-category">新增科目</button>
-   </fieldset>
-   <p class="muted">設定保存在目前的瀏覽器。</p>
-   <p id="settings-status" class="notice" role="status"></p>
-   <button class="primary lead" type="submit">儲存設定</button>
-  </form>
-  <details id="settings-backup" class="lead"><summary>資料備份與安裝</summary>
-<section class="lead">
- <h2>備份與還原</h2>
- <p class="muted">帳目自動存於目前的瀏覽器。換裝置或清除瀏覽器資料前，請下載完整備份。</p>
- <div class="actions lead">
-  <button id="backup" type="button">下載全部帳目</button>
-  <button id="restore" type="button">匯入備份</button>
-  <input id="backup-file" type="file" accept=".json,application/json" hidden>
- </div>
- <p id="backup-reminder" class="muted lead"></p><p id="backup-status" class="notice" role="status"></p>
-</section>
-<details class="lead" id="app-install">
- <summary>安裝到手機主畫面</summary>
- <p class="muted lead">iPhone：用 Safari 開啟，從「分享」選「加入主畫面」。Android：在 Chrome 選單選「安裝應用程式」或「加到主畫面」。</p>
- <button id="install-app" type="button" hidden>安裝收攤對帳</button>
-</details>
-  </details>
- </dialog>
+
 <div id="daily-view">
  <div class="date-bar"><label>帳目日期 <input type="date" id="day"></label></div>
  <div id="daily-work" class="workspace">
@@ -279,6 +241,44 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <p id="history-results" class="muted" role="status"></p><div id="history-list"></div>
 </section>
 
+ <section id="settings" class="lead" hidden aria-labelledby="settings-title">
+  <div class="bar"><h2 id="settings-title" tabindex="-1">帳本設定</h2></div>
+  <form id="settings-form">
+   <label>開攤備用現金預設值（元） <input id="settings-float" type="number" min="1" max="999999999" step="1" inputmode="numeric"></label>
+   <fieldset class="lead"><legend>預設存款比例</legend>
+    <div class="settings-ratios">
+     <label>銀行 %<input id="settings-bank" type="number" min="0" max="100" step="0.01"></label>
+     <label>下次找零金 %<input id="settings-float-ratio" type="number" min="0" max="100" step="0.01"></label>
+     <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
+    </div>
+   </fieldset>
+   <fieldset class="lead"><legend>會計科目管理</legend>
+    <p class="muted">可新增、修改或移除任何科目。已入帳紀錄會保留原科目。</p>
+    <div id="category-settings"></div>
+    <button type="button" class="lead" id="add-category">新增科目</button>
+   </fieldset>
+   <p class="muted">設定保存在目前的瀏覽器。</p>
+   <p id="settings-status" class="notice" role="status"></p>
+   <button class="primary lead" type="submit">儲存設定</button>
+  </form>
+  <details id="settings-backup" class="lead"><summary>資料備份與安裝</summary>
+<section class="lead">
+ <h2>備份與還原</h2>
+ <p class="muted">帳目自動存於目前的瀏覽器。換裝置或清除瀏覽器資料前，請下載完整備份。</p>
+ <div class="actions lead">
+  <button id="backup" type="button">下載全部帳目</button>
+  <button id="restore" type="button">匯入備份</button>
+  <input id="backup-file" type="file" accept=".json,application/json" hidden>
+ </div>
+ <p id="backup-reminder" class="muted lead"></p><p id="backup-status" class="notice" role="status"></p>
+</section>
+<details class="lead" id="app-install">
+ <summary>安裝到手機主畫面</summary>
+ <p class="muted lead">iPhone：用 Safari 開啟，從「分享」選「加入主畫面」。Android：在 Chrome 選單選「安裝應用程式」或「加到主畫面」。</p>
+ <button id="install-app" type="button" hidden>安裝收攤對帳</button>
+</details>
+  </details>
+ </section>
 </main>
 <script>
 'use strict';
@@ -612,16 +612,14 @@ const allocationFields=['bank','float','reserve'];
 const hasDayNotes=data=>Boolean(data?.journal || data?.allocation);
 const defaultAllocationPoints=()=> (getLedgerSettings().ratios || []).map(ratio=>Math.round(ratio*100));
 const settingsFields=['settings-bank','settings-float-ratio','settings-reserve'].map(id=>$(id));
-$('open-settings').onclick=()=>{
+function renderSettings(){
   const current=getLedgerSettings();
   $('settings-float').value=current.float ?? pref('float-default') ?? '';
   settingsFields.forEach((input,i)=>{input.value=current.ratios?.[i] ?? '';});
   $('category-settings').replaceChildren();
   accountRules(current).forEach(appendCategorySetting);
   $('settings-status').textContent='';
-  $('settings').showModal();
-};
-$('close-settings').onclick=()=>$('settings').close();
+}
 $('settings-form').onsubmit=event=>{
   event.preventDefault();
   const ratios=settingsFields.map(input=>input.valueAsNumber || 0);
@@ -642,7 +640,7 @@ $('settings-form').onsubmit=event=>{
     select.replaceChildren(control('option','未分類',{value:''}),...[...new Set([...defaultAccountOptions(),selected].filter(Boolean))].map(value=>control('option',value,{value})));
     select.value=selected;
   }
-  $('settings').close();
+  $('settings-status').textContent='已儲存設定。';
   allocationTotal();
 };
 function allocationAmounts(cash, points){
@@ -727,16 +725,19 @@ const monthInput=$('history-month');
 monthInput.value=$('day').value.slice(0,7);
 function showLedgerView(view){
   const history=view==='history';
-  $('daily-view').hidden=history;
+  const settings=view==='settings';
+  $('daily-view').hidden=history || settings;
   $('daily-work').hidden=view!=='daily';
   $('closeout-work').hidden=view!=='closeout';
   $('history-view').hidden=!history;
-  for(const name of ['daily','closeout','history']){
+  $('settings').hidden=!settings;
+  for(const name of ['daily','closeout','history','settings']){
     $('nav-'+name).setAttribute('aria-pressed',String(view===name));
   }
   if(history){renderMonth();$('history-title').focus();}
+  if(settings){renderSettings();$('settings-title').focus();}
 }
-for(const view of ['daily','closeout','history']) $('nav-'+view).onclick=()=>showLedgerView(view);
+for(const view of ['daily','closeout','history','settings']) $('nav-'+view).onclick=()=>showLedgerView(view);
 function searchHistory(rows, keyword){
   const words=keyword.normalize('NFKC').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return rows.filter(row=>{
