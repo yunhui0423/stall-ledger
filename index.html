@@ -158,6 +158,11 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   #daily-work{grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);align-items:start}
   #daily-work #review-panel,#daily-work .posted-panel{grid-column:1/-1}
 }
+#opening-cash-panel,#journal-panel{border-top:3px solid var(--accent)}
+#opening-cash-panel{background:#fbfaf7}
+#opening-cash-panel .actions button:first-child{color:#154d3a;background:#e1f0e5;border-color:#b7cebf}
+#journal-panel textarea{min-height:64px}
+#journal-saved{background:#e1f0e5;color:#154d3a;padding:3px 7px;border-radius:6px}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -200,16 +205,6 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p class="muted lead">拆帳後會先列出待確認帳目。會計科目可在草稿上修改。</p>
   <p id="status" class="notice" role="status"></p>
- <details class="lead"><summary>開攤備用現金</summary>
- <p class="muted lead" id="float-default-info"></p>
- <div class="actions lead"><button id="float-use" type="button">帶入預設</button>
- <button id="float-prev" type="button">沿用昨日金額</button></div>
- <p id="float-status" class="notice" role="status"></p></details>
-  <details id="journal-panel" class="lead"><summary>記帳日記 <span id="journal-saved" class="muted" hidden>· 已有備忘</span></summary>
-   <form id="journal-form"><label for="journal">當日備忘</label>
- <textarea id="journal" maxlength="2000" placeholder="記下今天的生意、特殊交易或明天要追的款項"></textarea>
- <button>儲存日記</button><p id="journal-status" class="notice" role="status"></p></form>
-  </details>
  </section>
   <section id="online-receipts" aria-labelledby="online-receipts-title">
    <h2 id="online-receipts-title">網路收款</h2>
@@ -231,6 +226,18 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
     </div>
     <p id="receipt-demo-status" class="notice" role="status"></p>
    </details>
+  </section>
+ <section id="opening-cash-panel" aria-labelledby="opening-cash-title">
+  <h2 id="opening-cash-title">開攤備用現金</h2>
+ <p class="muted lead" id="float-default-info"></p>
+ <div class="actions lead"><button id="float-use" type="button">帶入預設</button>
+ <button id="float-prev" type="button">沿用昨日金額</button></div>
+ <p id="float-status" class="notice" role="status"></p></section>
+  <section id="journal-panel" aria-labelledby="journal-title">
+  <div class="bar"><h2 id="journal-title">記帳日記</h2><span id="journal-saved" class="muted" hidden>已有備忘</span></div>
+   <form id="journal-form"><label for="journal">當日備忘</label>
+ <textarea id="journal" maxlength="2000" placeholder="記下今天的生意、特殊交易或明天要追的款項"></textarea>
+ <button>儲存日記</button><p id="journal-status" class="notice" role="status"></p></form>
   </section>
  <section id="review-panel" hidden aria-labelledby="review-title">
   <form id="review">
@@ -804,7 +811,6 @@ function renderDayNotes(){
   const data=today();
   $('journal').value=data.journal ?? '';
   $('journal-saved').hidden=!data.journal;
-  $('journal-panel').open=Boolean(data.journal);
   $('journal-status').textContent='';
   $('allocation-status').textContent='';
   allocationTotal();
