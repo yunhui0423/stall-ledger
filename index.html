@@ -59,9 +59,20 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #journal-form{margin-top:12px}
 #allocation-form label{display:grid;grid-template-columns:minmax(0,1fr) minmax(65px,90px) minmax(70px,1fr);align-items:center;gap:8px;padding:7px 0}
 #allocation-form output{font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
+#ledger-nav{margin-top:14px}
+#ledger-nav [aria-pressed="true"]{background:#18543a;color:#fff;border-color:#18543a}
+.archive-filters{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:12px}
+.archive-filters label input:not([type=checkbox]){display:block;margin-top:4px}
+#history-list .archive-note{white-space:pre-wrap;overflow-wrap:anywhere;min-width:160px;max-width:280px}
 </style>
 <main>
- <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div><label>帳目日期 <input type="date" id="day"></label></header>
+ <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div></header>
+ <nav id="ledger-nav" class="actions" aria-label="帳本導覽">
+  <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
+  <button type="button" id="nav-history" aria-controls="history-view" aria-pressed="false">歷史資料</button>
+ </nav>
+ <div id="daily-view">
+ <label class="lead">帳目日期 <input type="date" id="day"></label>
  <div class="grid">
  <section>
   <h2>記一筆，或一次講完</h2>
@@ -127,11 +138,19 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <button>儲存分配</button><p id="allocation-status" class="notice" role="status"></p>
  </form>
 </section>
-<section class="lead">
- <div class="bar"><h2>月報與歷史帳目</h2><button id="export-month" type="button">匯出月報 CSV</button></div>
- <label for="history-month">查詢月份</label><input id="history-month" type="month">
+</div>
+<section class="lead" id="history-view" hidden aria-labelledby="history-title">
+ <div class="bar"><h2 id="history-title" tabindex="-1">歷史資料</h2><button id="export-month" type="button">匯出月報 CSV</button></div>
+ <div class="archive-filters">
+  <label for="history-month">查詢月份<input id="history-month" type="month"></label>
+  <label for="history-query">搜尋帳目或日記<input id="history-query" type="search" placeholder="例如：補貨、找錯錢"></label>
+  <label><input id="history-all" type="checkbox"> 跨月份查詢</label>
+ </div>
+ <h3>所選月份摘要</h3>
  <dl id="month-totals" class="lead"></dl>
- <p id="history-discrepancy" class="muted"></p><div id="history-list"></div>
+ <p id="history-discrepancy" class="muted"></p>
+ <h3>每日紀錄</h3>
+ <p id="history-results" class="muted" role="status"></p><div id="history-list"></div>
 </section>
 <section class="lead">
  <h2>備份與還原</h2>
@@ -447,22 +466,41 @@ function renderDayNotes(){
   allocationTotal();
 }
 function monthRows(source, month){
-  return Object.entries(source).filter(([day,data])=>day.startsWith(month+'-') &&
+  return Object.entries(source).filter(([day,data])=>(!month || day.startsWith(month+'-')) &&
     (data.entries.length || data.cash!=='' || data.incident || hasDayNotes(data)))
     .sort(([a],[b])=>b.localeCompare(a)).map(([day,data])=>{
       const totals=sums(data.entries);
       return {day,income:totals.cashIn+totals.digitalIn,expense:totals.cashOut+totals.digitalOut,
         net:totals.net,unpaid:totals.unpaid,expected:totals.expected,cash:data.cash===''?null:Number(data.cash),
         diff:data.cash===''?null:Number(data.cash)-totals.expected,
-        reason:data.incident?.reason ?? '',note:data.incident?.note ?? ''};
+        reason:data.incident?.reason ?? '',note:data.incident?.note ?? '',journal:data.journal ?? '',
+        allocation:data.allocation,entries:data.entries};
     });
 }
 const monthFields={income:'已收收入',expense:'已付支出',net:'收支淨額',unpaid:'已登錄未收款',
   expected:'帳面現金',cash:'實點現金',diff:'現金差額'};
 const monthInput=$('history-month');
 monthInput.value=$('day').value.slice(0,7);
+function showLedgerView(history){
+  $('daily-view').hidden=history;
+  $('history-view').hidden=!history;
+  $('nav-daily').setAttribute('aria-pressed',String(!history));
+  $('nav-history').setAttribute('aria-pressed',String(history));
+  if(history){renderMonth();$('history-title').focus();}
+  else $('day').focus();
+}
+$('nav-daily').onclick=()=>showLedgerView(false);
+$('nav-history').onclick=()=>showLedgerView(true);
+function searchHistory(rows, keyword){
+  const words=keyword.normalize('NFKC').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return rows.filter(row=>{
+    const haystack=[row.day,row.journal,row.reason,row.note,...row.entries.map(item=>item.note)]
+      .join(' ').normalize('NFKC').toLowerCase();
+    return words.every(word=>haystack.includes(word));
+  });
+}
 function renderMonth(){
-  const rows=monthRows(records,monthInput.value);
+  const rows=monthRows(records,monthInput.value || $('day').value.slice(0,7));
   $('export-month').disabled=!rows.length;
   const mismatches=rows.filter(row=>row.diff!==null && row.diff!==0);
   const counts=new Map();
@@ -478,26 +516,38 @@ function renderMonth(){
     return line;
   }));
   const list=$('history-list');
-  if(!rows.length){list.replaceChildren(control('p','此月份沒有帳目。',{class:'muted'}));return;}
+  const candidates=$('history-all').checked?monthRows(records,''):rows;
+  const results=searchHistory(candidates,$('history-query').value);
+  $('history-results').textContent='找到 '+results.length+' 天紀錄。';
+  if(!results.length){list.replaceChildren(control('p','沒有符合條件的歷史資料。',{class:'muted'}));return;}
   const table=control('table');
   const header=control('tr');
-  header.append(...['日期',...Object.values(monthFields),'差額原因'].map(label=>control('th',label,{scope:'col'})));
+  header.append(...['日期',...Object.values(monthFields),'差額原因','記帳日記','存款分配'].map(label=>control('th',label,{scope:'col'})));
   const head=control('thead');head.append(header);
   const body=control('tbody');
-  for(const item of rows){
+  for(const item of results){
     const tr=control('tr');
     const dateCell=control('td');
     const open=control('button',item.day,{type:'button'});
-    open.onclick=()=>{$('day').value=item.day;$('day').onchange();$('day').focus();};
+    open.setAttribute('aria-label','查看 '+item.day+' 的完整紀錄');
+    open.onclick=()=>{
+      $('day').value=item.day;
+      $('day').onchange();
+      showLedgerView(false);
+    };
     dateCell.append(open);
     tr.append(dateCell,...Object.keys(monthFields).map(key=>control('td',item[key]===null?'未輸入':format(item[key]))),
-      control('td',item.reason || (item.note?'有備註':'—')));
+      control('td',item.reason || (item.note?'有備註':'—')),
+      control('td',item.journal || '—',{class:'archive-note'}),
+      control('td',item.allocation?'銀行 '+format(item.allocation.bank)+' · 找零 '+format(item.allocation.float)+' · 周轉 '+format(item.allocation.reserve):'—',{class:'archive-note'}));
     body.append(tr);
   }
   table.append(head,body);
   list.replaceChildren(table);
 }
-monthInput.onchange=renderMonth;
+monthInput.onchange=()=>{if(!monthInput.value)monthInput.value=$('day').value.slice(0,7);renderMonth();};
+$('history-query').oninput=renderMonth;
+$('history-all').onchange=renderMonth;
 $('export-month').onclick=()=>{
   const rows=monthRows(records,monthInput.value);
   const lines=[['日期',...Object.values(monthFields),'差額原因','備註'],
