@@ -158,7 +158,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <div class="archive-filters">
   <label for="history-month">查詢月份<input id="history-month" type="month"></label>
   <label for="history-query">搜尋帳目或日記<input id="history-query" type="search" placeholder="例如：補貨、找錯錢"></label>
-  <label><input id="history-all" type="checkbox"> 跨月份查詢</label>
+  <label><input id="history-all" type="checkbox"> 查詢所有月份</label>
  </div>
  <h3>所選月份摘要</h3>
  <dl id="month-totals" class="lead"></dl>
@@ -535,7 +535,8 @@ function renderMonth(){
   const list=$('history-list');
   const candidates=$('history-all').checked?monthRows(records,''):rows;
   const results=searchHistory(candidates,$('history-query').value);
-  $('history-results').textContent='找到 '+results.length+' 天紀錄。';
+  const scope=$('history-all').checked?'所有月份':(monthInput.value || $('day').value.slice(0,7));
+  $('history-results').textContent=scope+' · 找到 '+results.length+' 天紀錄。';
   if(!results.length){list.replaceChildren(control('p','沒有符合條件的歷史資料。',{class:'muted'}));return;}
   const table=control('table');
   const header=control('tr');
