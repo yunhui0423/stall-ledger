@@ -559,6 +559,15 @@ function updateReview(){
   $('review-panel').hidden=!count;
   $('review-meta').textContent=$('day').value+' · '+count+' 筆待確認';
 }
+function addParsedDrafts(items){
+  let recommended=0;
+  for(const item of items){
+    const account=recommendAccount(item);
+    if(account) recommended++;
+    addDraft({...item,account});
+  }
+  return recommended;
+}
 function addDraft(item){
   $('draft').append(row(item, box=>{box.remove();updateReview();}));
   updateReview();
@@ -970,8 +979,8 @@ $('parse').onclick=()=>{
   if(!items.length){$('status').textContent='請先輸入帳目內容。';return;}
   if($('draft').children.length && !confirm('用這次拆出的帳目取代目前草稿？')) return;
   $('draft').replaceChildren();
-  items.forEach(item=>addDraft({...item,account:recommendAccount(item)}));
-  $('status').textContent='拆出 '+items.length+' 筆。'+(items.some(item=>item.flag)?'有欄位待確認，請先補上。':'請核對金額與類型。');
+  const recommended=addParsedDrafts(items);
+  $('status').textContent='拆出 '+items.length+' 筆，已推薦 '+recommended+' 筆會計科目。'+(items.some(item=>item.flag)?'有欄位待確認，請先補上。':'請核對金額與類型。');
 };
 $('review').onsubmit=event=>{
   event.preventDefault();
@@ -987,9 +996,9 @@ function draftSpeech(transcript){
   if(!transcript){$('status').textContent='沒有取得語音辨識結果，請再試一次。';return;}
   $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
   const items=parseText(transcript);
-  items.forEach(item=>addDraft({...item,account:recommendAccount(item)}));
+  const recommended=addParsedDrafts(items);
   $('status').textContent=items.length
-    ? '語音已自動拆出 '+items.length+' 筆。'+(items.some(item=>item.flag)?'請補齊待確認欄位。':'請核對後入帳。')
+    ? '語音已自動拆出 '+items.length+' 筆，已推薦 '+recommended+' 筆會計科目。'+(items.some(item=>item.flag)?'請補齊待確認欄位。':'請核對後入帳。')
     : '沒有辨識到可拆分的語音，請再說一次。';
 }
 window.receiveAndroidSpeech=transcript=>{
