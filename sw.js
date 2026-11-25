@@ -1,4 +1,4 @@
-const cacheName = 'stall-ledger-app-v1';
+const cacheName = 'stall-ledger-app-v2';
 const root = new URL('./', self.location.href).href;
 const assets = [root, root+'manifest.webmanifest', root+'app-icon.svg'];
 self.addEventListener('install', event => {
@@ -15,7 +15,7 @@ self.addEventListener('fetch', event => {
     const cache = await caches.open(cacheName);
     const key = request.mode === 'navigate' ? root : request.url;
     try {
-      const response = await fetch(request);
+      const response = await fetch(request, request.mode === 'navigate' ? {cache:'no-cache'} : undefined);
       if (response.ok) {
         try { await cache.put(key, response.clone()); } catch {}
       }
