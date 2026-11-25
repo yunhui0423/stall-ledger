@@ -74,6 +74,9 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #journal-panel{padding-top:8px}
 #allocation-form label{padding-block:4px}
 @media(min-width:731px){#closeout #totals{grid-template-columns:repeat(3,minmax(0,1fr))}}
+#incident-list{padding-inline-start:20px}
+#incident-list li{margin-block:8px}
+#incident-list .actions{margin-top:4px}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div></header>
@@ -118,7 +121,8 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <p id="difference" aria-live="polite"></p>
   <ul id="checks" class="muted" hidden></ul>
   <details class="lead" id="incident-panel">
-   <summary>記錄差額原因</summary>
+   <summary>記錄差額原因 <span id="incident-count" class="muted"></span></summary>
+   <ul id="incident-list" class="muted" hidden></ul>
    <form id="incident" class="lead">
     <label for="incident-reason">原因</label>
     <select id="incident-reason">
@@ -127,7 +131,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
     </select>
     <label for="incident-note" class="lead">備註</label>
     <textarea id="incident-note" maxlength="500" placeholder="例如：下午多找客人 50 元"></textarea>
-    <button type="submit">儲存差額紀錄</button>
+    <button type="submit">新增差額紀錄</button> <button type="button" id="incident-cancel" hidden>取消編輯</button>
     <p class="muted lead">這裡只記原因，現金差額仍依實點金額計算。</p>
     <p id="incident-status" class="notice" role="status"></p>
    </form>
@@ -475,15 +479,17 @@ function renderDayNotes(){
   $('allocation-status').textContent='';
   allocationTotal();
 }
+const incidentRows=data=>data?.incidents ?? (data?.incident?[data.incident]:[]);
 function monthRows(source, month){
   return Object.entries(source).filter(([day,data])=>(!month || day.startsWith(month+'-')) &&
-    (data.entries.length || data.cash!=='' || data.incident || hasDayNotes(data)))
+    (data.entries.length || data.cash!=='' || incidentRows(data).length || hasDayNotes(data)))
     .sort(([a],[b])=>b.localeCompare(a)).map(([day,data])=>{
       const totals=sums(data.entries);
-      return {day,income:totals.cashIn+totals.digitalIn,expense:totals.cashOut+totals.digitalOut,
+      const incidents=incidentRows(data);
+      return {day,incidents,income:totals.cashIn+totals.digitalIn,expense:totals.cashOut+totals.digitalOut,
         net:totals.net,unpaid:totals.unpaid,expected:totals.expected,cash:data.cash===''?null:Number(data.cash),
         diff:data.cash===''?null:Number(data.cash)-totals.expected,
-        reason:data.incident?.reason ?? '',note:data.incident?.note ?? '',journal:data.journal ?? '',
+        reason:[...new Set(incidents.map(item=>item.reason).filter(Boolean))].join('、'),note:incidents.map(item=>item.note).filter(Boolean).join('\n'),journal:data.journal ?? '',
         allocation:data.allocation,entries:data.entries};
     });
 }
@@ -515,8 +521,9 @@ function renderMonth(){
   const mismatches=rows.filter(row=>row.diff!==null && row.diff!==0);
   const counts=new Map();
   for(const row of mismatches){
-    const reason=row.reason || '未標記';
-    counts.set(reason,(counts.get(reason) || 0)+1);
+    const reasons=new Set(row.incidents.map(item=>item.reason).filter(Boolean));
+    if(!reasons.size) reasons.add('未標記');
+    for(const reason of reasons) counts.set(reason,(counts.get(reason) || 0)+1);
   }
   const breakdown=[...counts].sort((a,b)=>b[1]-a[1]).map(([reason,n])=>reason+' '+n+' 天');
   $('history-discrepancy').textContent='已實點 '+rows.filter(row=>row.cash!==null).length+' 天，差額 '+mismatches.length+' 天'+(breakdown.length?'（'+breakdown.join('、')+'）':'')+'。';
@@ -604,9 +611,9 @@ function render(){
   renderDayNotes();
   const current=today();
   $('cash').value=current.cash;
-  $('incident-reason').value=current.incident?.reason ?? '';
-  $('incident-note').value=current.incident?.note ?? '';
-  $('incident-panel').open=Boolean(current.incident);
+  resetIncidentForm();
+  renderIncidents();
+  $('incident-panel').open=Boolean(incidentRows(current).length);
   $('incident-status').textContent='';
   showTotals();
   renderMonth();
@@ -637,23 +644,66 @@ $('day').onchange=()=>{
   if(!$('review-panel').hidden) $('status').textContent='入帳日期已切換為 '+$('day').value+'，請確認。';
 };
 $('day').dataset.previous=$('day').value;
+let incidentIndex=null;
+function resetIncidentForm(){
+  incidentIndex=null;
+  $('incident').reset();
+  $('incident').querySelector('[type=submit]').textContent='新增差額紀錄';
+  $('incident-cancel').hidden=true;
+}
+function renderIncidents(){
+  const entries=incidentRows(today());
+  const list=$('incident-list');
+  list.hidden=!entries.length;
+  $('incident-count').textContent=entries.length?'· '+entries.length+' 筆':'';
+  list.replaceChildren(...entries.map((entry,index)=>{
+    const item=control('li');
+    const text=control('p',[entry.reason || '未標記原因',entry.note].filter(Boolean).join(' · '));
+    text.style.overflowWrap='anywhere';
+    const edit=control('button','編輯',{type:'button'});
+    edit.onclick=()=>{
+      incidentIndex=index;
+      $('incident-reason').value=entry.reason;
+      $('incident-note').value=entry.note;
+      $('incident').querySelector('[type=submit]').textContent='更新差額紀錄';
+      $('incident-cancel').hidden=false;
+      $('incident-reason').focus();
+    };
+    const remove=control('button','刪除',{type:'button'});
+    remove.onclick=()=>{
+      if(confirm('刪除這筆差額紀錄？')) saveIncidents(entries.filter((_,i)=>i!==index),'已刪除這筆紀錄。');
+    };
+    const actions=control('div','',{class:'actions'});
+    actions.append(edit,remove);
+    item.append(text,actions);
+    return item;
+  }));
+}
+function saveIncidents(entries,message){
+  const updated={...today()};
+  delete updated.incident;
+  if(entries.length) updated.incidents=entries;
+  else delete updated.incidents;
+  const next={...records,[$('day').value]:updated};
+  try {localStorage.setItem(key,JSON.stringify(next));}
+  catch {$('incident-status').textContent='瀏覽器無法儲存差額紀錄，請稍後再試。';return;}
+  records=next;
+  resetIncidentForm();
+  renderIncidents();
+  renderMonth();
+  $('incident-status').textContent=message;
+}
+$('incident-cancel').onclick=resetIncidentForm;
 $('incident').onsubmit=event=>{
   event.preventDefault();
-  const current=today();
   const reason=$('incident-reason').value;
   const note=$('incident-note').value.trim();
-  const updated={...current};
-  if(reason || note) updated.incident={reason,note};
-  else delete updated.incident;
-  const next={...records,[$('day').value]:updated};
-  try {
-    localStorage.setItem(key,JSON.stringify(next));
-    records=next;
-    renderMonth();
-    $('incident-status').textContent=updated.incident?'已儲存此日的差額紀錄。':'已清除此日的差額紀錄。';
-  } catch {
-    $('incident-status').textContent='瀏覽器無法儲存差額紀錄，請稍後再試。';
-  }
+  if(!reason && !note){$('incident-status').textContent='請選擇原因或填寫備註。';return;}
+  const entries=[...incidentRows(today())];
+  const index=incidentIndex;
+  if(index===null) entries.push({reason,note});
+  else entries[index]={reason,note};
+  saveIncidents(entries,index===null?'已新增一筆差額紀錄。':'已更新差額紀錄。');
 };
 $('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();renderMonth();allocationTotal();}};
 $('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
@@ -757,8 +807,10 @@ function readBackup(text){
       typeof item?.note==='string' && item.note.trim()!=='' && item.note.length<=240 &&
       Object.hasOwn(types,item.type) && Number.isSafeInteger(item.value) && item.value>0 && item.value<=999999999);
     const incident=data?.incident;
-    const validIncident=incident===undefined || (incident && typeof incident.note==='string' &&
-      incident.note.length<=500 && ['', '找錯錢','疑似詐騙','漏記交易','原因不明','其他'].includes(incident.reason));
+    const isIncident=item=>item && typeof item.note==='string' && item.note.length<=500 &&
+      ['', '找錯錢','疑似詐騙','漏記交易','原因不明','其他'].includes(item.reason);
+    const validIncident=(incident===undefined || isIncident(incident)) &&
+      (data?.incidents===undefined || (Array.isArray(data.incidents) && data.incidents.every(isIncident)));
     const validNotes=(data?.journal===undefined || (typeof data.journal==='string' && data.journal.length<=2000)) &&
       (data?.allocation===undefined || (data.allocation && (data.allocation.points===undefined || (Array.isArray(data.allocation.points) &&
         data.allocation.points.length===3 && data.allocation.points.every(point=>Number.isInteger(point) && point>=0 && point<=10000) &&
@@ -775,8 +827,8 @@ function mergeBackup(current,incoming){
   let added=0, skipped=0;
   for(const [day,data] of Object.entries(incoming)){
     const existing=merged[day];
-    if(existing && (existing.entries.length || existing.cash!=='' || existing.incident || hasDayNotes(existing))){ skipped++; continue; }
-    if(!data.entries.length && data.cash==='' && !data.incident && !hasDayNotes(data)) continue;
+    if(existing && (existing.entries.length || existing.cash!=='' || incidentRows(existing).length || hasDayNotes(existing))){ skipped++; continue; }
+    if(!data.entries.length && data.cash==='' && !incidentRows(data).length && !hasDayNotes(data)) continue;
     merged[day]=data;
     added++;
   }
