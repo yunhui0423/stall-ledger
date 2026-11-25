@@ -184,6 +184,15 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   <label for="speech">帳目內容</label>
   <textarea id="speech" placeholder="例如：現金賣了兩千三，LINE Pay 收八百，補貨花四百五"></textarea>
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
+  <details id="online-receipts" class="lead">
+   <summary>網路收款</summary>
+   <div class="actions lead">
+    <button type="button" id="preset-cod-pending">貨到付款・待撥款</button>
+    <button type="button" id="preset-cod-paid">貨到付款・已撥款</button>
+    <button type="button" id="preset-bank-paid">銀行轉帳・已到帳</button>
+   </div>
+   <p class="muted lead">選一種收款狀態，填寫金額後確認入帳。</p>
+  </details>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p class="muted lead">拆帳後會先列出待確認帳目。會計科目可在草稿上修改。</p>
   <p id="status" class="notice" role="status"></p>
@@ -1075,6 +1084,18 @@ $('incident').onsubmit=event=>{
 $('cash').oninput=event=>{if(event.target.validity.valid){today().cash=event.target.value;save();showTotals();renderMonth();allocationTotal();}};
 $('example').onclick=()=>{$('speech').value=example;$('speech').focus();};
 $('manual').onclick=()=>addDraft({note:'',type:'',value:''});
+const receiptPresets={
+  'preset-cod-pending':{note:'貨到付款待撥款',type:'unpaid',method:'cod'},
+  'preset-cod-paid':{note:'貨到付款已撥款',type:'digitalIn',method:'cod'},
+  'preset-bank-paid':{note:'銀行轉帳已到帳',type:'digitalIn',method:'transfer'}
+};
+for(const [id,item] of Object.entries(receiptPresets)){
+  $(id).onclick=()=>{
+    addDraft({...item,value:''});
+    $('review-status').textContent='已帶入收款方式，請核對狀態並填寫金額。';
+    focusLedgerHeading('review-title');
+  };
+}
 $('parse').onclick=()=>{
   const items=parseText($('speech').value);
   if(!items.length){$('status').textContent='請先輸入帳目內容。';return;}
