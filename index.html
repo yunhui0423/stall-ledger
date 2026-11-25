@@ -161,11 +161,10 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
      <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
     </div>
    </fieldset>
-   <fieldset class="lead"><legend>自訂會計科目</legend>
-    <p class="muted">例如「包裝費」可填關鍵字「紙盒、提袋」。優先套用符合的自訂科目。</p>
+   <fieldset class="lead"><legend>會計科目管理</legend>
+    <p class="muted">可新增、修改或移除任何科目。已入帳紀錄會保留原科目。</p>
     <div id="category-settings"></div>
     <button type="button" class="lead" id="add-category">新增科目</button>
-    <details class="lead"><summary>查看內建科目</summary><p id="builtin-categories" class="muted"></p></details>
    </fieldset>
    <p class="muted">設定保存在目前的瀏覽器。</p>
    <p id="settings-status" class="notice" role="status"></p>
@@ -465,13 +464,20 @@ const builtinAccountRules=[
   ['支付手續費','out','手續費、payment fee、processing fee'],
   ['銷售退款','out','退款、退給客人、refund']
 ].map(([name,direction,keywords])=>({name,direction,keywords:keywords.split('、')}));
-function customAccountRules(settings=getLedgerSettings()){
-  return (settings.categories || []).map(category=>typeof category==='string'
-    ? {name:category,direction:'any',keywords:[category]} : category);
+function accountRules(settings=getLedgerSettings()){
+  if(Array.isArray(settings.accountRules)) return settings.accountRules;
+  const merged=new Map(categories.map(name=>[name,{name,
+    direction:name==='其他收入'?'in':'out',keywords:[]}]));
+  for(const rule of builtinAccountRules) merged.set(rule.name,rule);
+  for(const category of settings.categories || []){
+    const rule=typeof category==='string' ? {name:category,direction:'any',keywords:[category]} : category;
+    merged.set(rule.name,rule);
+  }
+  return [...merged.values()];
 }
-const defaultAccountOptions=()=>[...categories,...customAccountRules().map(rule=>rule.name)];
+const defaultAccountOptions=()=>accountRules().map(rule=>rule.name);
 const normalizeAccountText=value=>value.normalize('NFKC').toLowerCase();
-function recommendAccount(item, custom=customAccountRules()){
+function recommendAccount(item, rules=accountRules()){
   const direction=entryDirection(item.type);
   if(direction!=='in' && direction!=='out') return '';
   const text=normalizeAccountText(item.note);
@@ -488,7 +494,7 @@ function recommendAccount(item, custom=customAccountRules()){
     if(!sorted.length) return null;
     return sorted[1]?.[1]===sorted[0][1]?'':sorted[0][0];
   }
-  return best(custom) ?? best(builtinAccountRules) ?? '';
+  return best(rules) ?? '';
 }
 function appendCategorySetting(rule={name:'',direction:'any',keywords:[]}){
   const row=control('div','',{class:'category-setting'});
@@ -499,7 +505,7 @@ function appendCategorySetting(rule={name:'',direction:'any',keywords:[]}){
   direction.value=rule.direction;
   const keywords=control('input','',{maxlength:200,placeholder:'以頓號或逗號分隔'});
   keywords.value=rule.keywords.join('、');
-  const keywordField=field('關鍵字',keywords);
+  const keywordField=field('關鍵字（選填）',keywords);
   keywordField.className='category-keywords';
   const remove=control('button','移除科目',{type:'button'});
   remove.onclick=()=>row.remove();
@@ -611,8 +617,7 @@ $('open-settings').onclick=()=>{
   $('settings-float').value=current.float ?? pref('float-default') ?? '';
   settingsFields.forEach((input,i)=>{input.value=current.ratios?.[i] ?? '';});
   $('category-settings').replaceChildren();
-  customAccountRules(current).forEach(appendCategorySetting);
-  $('builtin-categories').textContent=categories.join('、');
+  accountRules(current).forEach(appendCategorySetting);
   $('settings-status').textContent='';
   $('settings').showModal();
 };
@@ -625,11 +630,11 @@ $('settings-form').onsubmit=event=>{
   }
   const categories=[...$('category-settings').children].map(row=>row.read());
   if(categories.some(rule=>!rule.name) || new Set(categories.map(rule=>normalizeAccountText(rule.name))).size!==categories.length){
-    $('settings-status').textContent='請填寫每個科目名稱，並確認自訂科目沒有重複。';return;
+    $('settings-status').textContent='請填寫每個科目名稱，並確認科目沒有重複。';return;
   }
-  for(const rule of categories) if(!rule.keywords.length) rule.keywords=[rule.name];
+
   try{
-    localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,categories}));
+    localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,accountRules:categories}));
   }catch{$('settings-status').textContent='瀏覽器無法儲存設定。';return;}
   showDefaultFloat();
   for(const select of document.querySelectorAll('.row select[data-account]')){
