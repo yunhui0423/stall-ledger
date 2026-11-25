@@ -54,6 +54,11 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   #draft .row button{grid-column:2;justify-self:end}
   .review-footer button{width:100%}
 }
+#journal-panel{border-top:1px solid #dbe4d8;padding-top:12px}
+#journal-panel summary{cursor:pointer;font-weight:600}
+#journal-form{margin-top:12px}
+#allocation-form label{display:grid;grid-template-columns:minmax(0,1fr) minmax(65px,90px) minmax(70px,1fr);align-items:center;gap:8px;padding:7px 0}
+#allocation-form output{font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div><label>帳目日期 <input type="date" id="day"></label></header>
@@ -65,6 +70,11 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p id="status" class="notice" role="status"></p>
+  <details id="journal-panel" class="lead"><summary>記帳日記 <span id="journal-saved" class="muted" hidden>· 已有備忘</span></summary>
+   <form id="journal-form"><label for="journal">當日備忘</label>
+ <textarea id="journal" maxlength="2000" placeholder="記下今天的生意、特殊交易或明天要追的款項"></textarea>
+ <button>儲存日記</button><p id="journal-status" class="notice" role="status"></p></form>
+  </details>
  </section>
  <section id="review-panel" hidden aria-labelledby="review-title">
   <form id="review">
@@ -106,25 +116,17 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
  </div>
  <section><div class="bar"><h2>已入帳明細</h2><button id="export">匯出當日 CSV</button></div>
  <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
-<div class="grid">
-<section>
- <h2>記帳日記</h2>
- <form id="journal-form"><label for="journal">當日備忘</label>
- <textarea id="journal" maxlength="2000" placeholder="記下今天的生意、特殊交易或明天要追的款項"></textarea>
- <button>儲存日記</button><p id="journal-status" class="notice" role="status"></p></form>
-</section>
-<section>
+<section class="lead" id="allocation-panel">
  <h2>存款分配</h2>
- <p class="muted">記錄收攤後打算怎麼分配現金。分配金額不會列入營業支出。</p>
+ <p class="muted">以當日實點現金為基準。輸入各用途的百分比，下面會顯示換算金額。</p>
  <form id="allocation-form" class="lead">
-  <label>存入銀行（元） <input id="alloc-bank" type="number" min="0" max="999999999" step="1" inputmode="numeric"></label>
-  <label>下次找零金（元） <input id="alloc-float" type="number" min="0" max="999999999" step="1" inputmode="numeric"></label>
-  <label>留作營運周轉（元） <input id="alloc-reserve" type="number" min="0" max="999999999" step="1" inputmode="numeric"></label>
-  <p id="allocation-total" class="lead" aria-live="polite"></p>
+  <label>存入銀行（%） <input id="alloc-bank" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-bank" for="alloc-bank"></output></label>
+  <label>下次找零金（%） <input id="alloc-float" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-float" for="alloc-float"></output></label>
+  <label>留作營運周轉（%） <input id="alloc-reserve" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-reserve" for="alloc-reserve"></output></label>
+  <p id="allocation-base" class="muted lead"></p><p id="allocation-total" class="lead" aria-live="polite"></p>
   <button>儲存分配</button><p id="allocation-status" class="notice" role="status"></p>
  </form>
 </section>
-</div>
 <section class="lead">
  <div class="bar"><h2>月報與歷史帳目</h2><button id="export-month" type="button">匯出月報 CSV</button></div>
  <label for="history-month">查詢月份</label><input id="history-month" type="month">
@@ -379,12 +381,32 @@ function sums(entries){
 const allocationFields=['bank','float','reserve'];
 const hasDayNotes=data=>Boolean(data?.journal || data?.allocation);
 const allocationInputs=allocationFields.map(field=>$('alloc-'+field));
+function allocationAmounts(cash, points){
+  const amounts=points.map(point=>Math.floor(cash*point/10000));
+  const target=Math.floor(cash*points.reduce((sum,point)=>sum+point,0)/10000);
+  const priority=points.map((point,i)=>({i,remainder:cash*point%10000}))
+    .sort((a,b)=>b.remainder-a.remainder);
+  const remainder=target-amounts.reduce((sum,amount)=>sum+amount,0);
+  priority.slice(0,remainder).forEach(({i})=>amounts[i]++);
+  return amounts;
+}
 function allocationTotal(){
-  const sum=allocationInputs.reduce((total,input)=>total+(input.valueAsNumber || 0),0);
-  const cash=today().cash;
-  const remaining=Number(cash)-sum;
-  $('allocation-total').textContent='已分配 '+format(sum)+(cash===''?' · 請先輸入實點現金':remaining<0?' · 超出實點 '+format(-remaining):' · 尚未分配 '+format(remaining));
-  return sum;
+  const data=today();
+  const points=allocationInputs.map(input=>Math.round((input.valueAsNumber || 0)*100));
+  const share=points.reduce((sum,point)=>sum+point,0);
+  const cash=data.cash===''?null:Number(data.cash);
+  const valid=share<=10000 && allocationInputs.every(input=>input.validity.valid);
+  const preview=cash!==null && valid ? allocationAmounts(cash,points) : null;
+  const legacy=!data.allocation?.points && data.allocation && allocationInputs.every(input=>input.value==='');
+  $('allocation-base').textContent=cash===null?'請先輸入當日實點現金。':'實點現金 '+format(cash);
+  for(const [i,field] of allocationFields.entries()){
+    $('amount-'+field).textContent=legacy?format(data.allocation[field]):preview?format(preview[i]):'—';
+  }
+  const total=preview?.reduce((sum,amount)=>sum+amount,0);
+  $('allocation-total').textContent=legacy?'上次儲存的是固定金額，填入比例即可更新。':
+    !valid?'比例合計須在 100% 以內，每欄最多兩位小數。':
+    '分配比例 '+share/100+'%'+(preview?' · 尚未分配 '+format(cash-total):'');
+  return {points,share,cash,preview,valid};
 }
 function saveDayField(field,value,status){
   const day=$('day').value;
@@ -393,6 +415,7 @@ function saveDayField(field,value,status){
     localStorage.setItem(key,JSON.stringify(next));
     records=next;
     renderMonth();
+    if(field==='journal') $('journal-saved').hidden=!value;
     $(status).textContent='已儲存 '+day+' 的紀錄。';
   }catch{$(status).textContent='瀏覽器無法儲存，請先備份現有帳目。';}
 }
@@ -403,17 +426,22 @@ $('journal-form').onsubmit=event=>{
 allocationInputs.forEach(input=>input.addEventListener('input',allocationTotal));
 $('allocation-form').onsubmit=event=>{
   event.preventDefault();
-  const sum=allocationTotal();
-  if(sum && (today().cash==='' || sum>Number(today().cash))){
-    $('allocation-status').textContent='請確認分配總額沒有超過當日實點現金。';return;
+  const {points,share,cash,preview,valid}=allocationTotal();
+  if(!valid || (share && cash===null)){
+    $('allocation-status').textContent='請先輸入實點現金，並確認分配比例。';return;
   }
-  const amounts=Object.fromEntries(allocationFields.map((field,i)=>[field,allocationInputs[i].valueAsNumber || 0]));
-  saveDayField('allocation',sum?amounts:undefined,'allocation-status');
+  if(!share && !today().allocation?.points && today().allocation) return;
+  const value=share?{...Object.fromEntries(allocationFields.map((field,i)=>[field,preview[i]])),points}:undefined;
+  saveDayField('allocation',value,'allocation-status');
 };
 function renderDayNotes(){
   const data=today();
   $('journal').value=data.journal ?? '';
-  allocationInputs.forEach((input,i)=>{input.value=data.allocation?.[allocationFields[i]] ?? '';});
+  $('journal-saved').hidden=!data.journal;
+  $('journal-panel').open=Boolean(data.journal);
+  allocationInputs.forEach((input,i)=>{
+    input.value=data.allocation?.points ? data.allocation.points[i]/100 : '';
+  });
   $('journal-status').textContent='';
   $('allocation-status').textContent='';
   allocationTotal();
@@ -672,7 +700,9 @@ function readBackup(text){
     const validIncident=incident===undefined || (incident && typeof incident.note==='string' &&
       incident.note.length<=500 && ['', '找錯錢','疑似詐騙','漏記交易','原因不明','其他'].includes(incident.reason));
     const validNotes=(data?.journal===undefined || (typeof data.journal==='string' && data.journal.length<=2000)) &&
-      (data?.allocation===undefined || (data.allocation && allocationFields.every(field=>{
+      (data?.allocation===undefined || (data.allocation && (data.allocation.points===undefined || (Array.isArray(data.allocation.points) &&
+        data.allocation.points.length===3 && data.allocation.points.every(point=>Number.isInteger(point) && point>=0 && point<=10000) &&
+        data.allocation.points.reduce((sum,point)=>sum+point,0)<=10000)) && allocationFields.every(field=>{
         const amount=data.allocation[field];
         return Number.isSafeInteger(amount) && amount>=0 && amount<=999999999;
       })));
