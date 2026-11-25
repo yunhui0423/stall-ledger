@@ -330,10 +330,13 @@ const pref=(name,value)=>{
   } catch {}
   return null;
 };
-const methods={line:'LINE Pay',jko:'街口支付',transfer:'轉帳',card:'刷卡',other:'其他電子支付'};
+const methods={cod:'貨到付款',line:'LINE Pay',jko:'街口支付',transfer:'轉帳',card:'刷卡',other:'其他電子支付'};
+const isCashOnDelivery=note=>/貨到付款|到付貨款|代收貨款|貨款代收/.test(note);
 function payment(item){
+  if(item.type==='unpaid') return item.method==='cod' || isCashOnDelivery(item.note)?'cod':'';
   if(!item.type.startsWith('digital')) return '';
   if(Object.hasOwn(methods,item.method)) return item.method;
+  if(isCashOnDelivery(item.note)) return 'cod';
   if(/line\s*pay/i.test(item.note)) return 'line';
   if(/街口/.test(item.note)) return 'jko';
   if(/轉帳|transfer/i.test(item.note)) return 'transfer';
@@ -373,14 +376,16 @@ function parseLine(note){
   const money=String.raw`(?:\d{1,3}(?:,\d{3})+|\d+|[零〇一二三四五六七八九兩两十百千萬万]+)`;
   const text=note.replace(/找零金|開攤備用現金/g,'');
   const tokens=text.match(new RegExp(money,'g')) || [];
-  const digital=/line\s*pay|街口|電子支付|轉帳|刷卡|悠遊卡|全支付/i.test(note);
-  const unpaid=/賒帳|賒欠|未收款|還沒(?:付|收到)|還未(?:付|收到)|假轉帳/i.test(note);
+  const cod=isCashOnDelivery(note);
+  const codSettled=cod && /已撥款|已入帳|撥款到帳|撥款入帳|收到撥款|收到貨款|已收到/.test(note) && !/還沒|尚未|未撥款|沒收到|待撥款|未入帳/.test(note);
+  const digital=cod || /line\s*pay|街口|電子支付|轉帳|刷卡|悠遊卡|全支付/i.test(note);
+  const unpaid=cod && !codSettled || /賒帳|賒欠|未收款|還沒(?:付|收到)|還未(?:付|收到)|假轉帳/i.test(note);
   const outgoing=/支出|補貨|繳稅|繳了稅|繳營業稅|支付稅金|付了|付運費|付租金|花|成本|買了|買進|進貨|退款|退給/.test(note);
   const incoming=/收入|賣|收了|收到|收\s*[\d零一二三四五六七八九兩十百千萬]|營業額|入帳/.test(note);
   const float=/找零金|開攤備用現金|備用金|起始現金/.test(note);
   const settled=!outgoing && /(?:收到|收回|收了).*(?:賒帳|欠款)|(?:賒帳|欠款).*(?:已收|收到了)/.test(note) && !/還[沒未]|未收|沒收到|假轉帳/.test(note);
   const conflict=/取消|作廢|沒花錢|未支付|不用付|沒收到退款/.test(note) || (unpaid && outgoing);
-  const type=(unpaid && outgoing) || /取消|作廢/.test(note)?'':settled?(digital?'digitalIn':'cashIn'):unpaid?'unpaid':float && !outgoing && !incoming?'float':outgoing!==incoming && !float?
+  const type=(unpaid && outgoing) || /取消|作廢/.test(note)?'':settled?(digital?'digitalIn':'cashIn'):unpaid?'unpaid':codSettled && !outgoing?'digitalIn':float && !outgoing && !incoming?'float':outgoing!==incoming && !float?
     (outgoing?(digital?'digitalOut':'cashOut'):(digital?'digitalIn':'cashIn')):'';
   const uncertain=conflict || /負|约|約|(?:[\d十百千萬零一二三四五六七八九兩]\s*多)(?=\s*(?:元|塊|$))|大概|差不多|左右|可能|不確定|多一點|多款|多塊|多元|多萬|多千|多百|(?:少於|超過)|[-－−]|\d\s*多(?=\s|$)|(?<!收)到\s*[\d一二三四五六七八九兩十百千萬]|\d\s*[萬千百]|[\d萬千百十]點[零一二三四五六七八九\d]|\d\.\d/.test(note);
   const quantity=new RegExp('('+money+')\\s*(?:個|份|杯|袋|盒|件|斤|碗|包|瓶|支)\\s*(?:(?:每|一)(?:個|份|杯|袋|盒|件|斤|碗|包|瓶|支)\\s*|各\\s*)?('+money+')');
@@ -578,9 +583,15 @@ function row(item, onRemove, editing=false){
   const methodField=field('付款方式',method);
   const updateMethod=()=>{
     const active=type.value==='in' || type.value==='out';
-    methodField.hidden=!active;
+    const pending=type.value==='unpaid';
+    for(const option of method.options){
+      option.disabled=(pending && option.value!=='' && option.value!=='cod') ||
+        (type.value==='out' && option.value==='cod');
+    }
+    if(method.selectedOptions[0]?.disabled) method.value='';
+    methodField.hidden=!active && !pending;
     method.required=active;
-    method.disabled=!active;
+    method.disabled=!active && !pending;
   };
   method.value=item.type.startsWith('cash')?'cash':payment(item);
   type.addEventListener('change',updateMethod);
@@ -591,9 +602,10 @@ function row(item, onRemove, editing=false){
   account.value=item.account || '';
   updateMethod();
   box.append(field('摘要',note),field('金額（元）',value),field('類型',type),methodField,field('會計科目',account),remove);
-  if(!item.flag && item.type==='unpaid') box.append(control('p','這筆列為未收款，收到後可更正為現金或電子收入。',{class:'flag'}));
+  if(!item.flag && item.type==='unpaid') box.append(control('p',payment(item)==='cod'
+    ?'貨到付款待撥款，先列為未收款。':'這筆列為未收款，待確認實際收款。',{class:'flag'}));
   if(item.flag) box.append(control('p',item.flag,{class:'flag'}));
-  box.read=()=>({note:note.value.trim(),type:entryType(type.value,method.value),value:value.valueAsNumber,...(method.required && method.value!=='cash'?{method:method.value}:{}),...(account.value?{account:account.value}:{})});
+  box.read=()=>({note:note.value.trim(),type:entryType(type.value,method.value),value:value.valueAsNumber,...(!method.disabled && method.value && method.value!=='cash'?{method:method.value}:{}),...(account.value?{account:account.value}:{})});
   return box;
 }
 function updateReview(){
@@ -927,7 +939,7 @@ function showTotals(){
   const methodSums=new Map();
   for(const item of current.entries){
     const method=payment(item);
-    if(!method) continue;
+    if(!method || !item.type.startsWith('digital')) continue;
     const row=methodSums.get(method) || {income:0,expense:0};
     row[item.type==='digitalIn'?'income':'expense']+=item.value;
     methodSums.set(method,row);
@@ -937,6 +949,12 @@ function showTotals(){
     line.append(control('dt',methods[key]),control('dd','收 '+format(row.income)+' ／ 付 '+format(row.expense)));
     return line;
   }));
+  const awaiting=current.entries.filter(item=>item.type==='unpaid' && payment(item)==='cod').reduce((sum,item)=>sum+item.value,0);
+  if(awaiting){
+    const line=control('div');
+    line.append(control('dt','貨到付款待撥款'),control('dd',format(awaiting)));
+    $('payment-totals').append(line);
+  }
   const diff=Number(current.cash)-totals.expected;
   const checks=[];
   if(current.cash!=='' && diff!==0){
