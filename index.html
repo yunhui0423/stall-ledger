@@ -152,7 +152,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <div id="entries"></div><p id="storage" class="notice" role="status"></p></section>
 <section class="lead" id="allocation-panel">
  <h2>存款分配</h2>
- <p class="muted">以當日實點現金為基準。輸入各用途的百分比，下面會顯示換算金額。</p>
+ <p class="muted">按當日已收營業收入分配（現金收入＋電子收入）。找零金、未收款與營業支出各自記錄。</p>
  <form id="allocation-form" class="lead">
   <label>存入銀行（%） <input id="alloc-bank" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-bank" for="alloc-bank"></output></label>
   <label>下次找零金（%） <input id="alloc-float" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-float" for="alloc-float"></output></label>
@@ -442,19 +442,21 @@ function allocationTotal(){
   const data=today();
   const points=allocationInputs.map(input=>Math.round((input.valueAsNumber || 0)*100));
   const share=points.reduce((sum,point)=>sum+point,0);
-  const cash=data.cash===''?null:Number(data.cash);
+  const totals=sums(data.entries);
+  const revenue=totals.cashIn+totals.digitalIn;
   const valid=share<=10000 && allocationInputs.every(input=>input.validity.valid);
-  const preview=cash!==null && valid ? allocationAmounts(cash,points) : null;
+  const preview=valid ? allocationAmounts(revenue,points) : null;
   const legacy=!data.allocation?.points && data.allocation && allocationInputs.every(input=>input.value==='');
-  $('allocation-base').textContent=cash===null?'請先輸入當日實點現金。':'實點現金 '+format(cash);
+  $('allocation-base').textContent='當日已收營業收入 '+format(revenue);
   for(const [i,field] of allocationFields.entries()){
     $('amount-'+field).textContent=legacy?format(data.allocation[field]):preview?format(preview[i]):'—';
   }
   const total=preview?.reduce((sum,amount)=>sum+amount,0);
   $('allocation-total').textContent=legacy?'上次儲存的是固定金額，填入比例即可更新。':
     !valid?'比例合計須在 100% 以內，每欄最多兩位小數。':
-    '分配比例 '+share/100+'%'+(preview?' · 尚未分配 '+format(cash-total):'');
-  return {points,share,cash,preview,valid};
+    '分配比例 '+share/100+'% · 尚未分配 '+format(revenue-total)+
+    (data.allocation?.points && data.allocation.basis!=='income'?' · 舊分配待重新儲存':'');
+  return {points,share,preview,valid};
 }
 function saveDayField(field,value,status){
   const day=$('day').value;
@@ -464,6 +466,7 @@ function saveDayField(field,value,status){
     records=next;
     renderMonth();
     if(field==='journal') $('journal-saved').hidden=!value;
+    if(field==='allocation') allocationTotal();
     $(status).textContent='已儲存 '+day+' 的紀錄。';
   }catch{$(status).textContent='瀏覽器無法儲存，請先備份現有帳目。';}
 }
@@ -474,12 +477,12 @@ $('journal-form').onsubmit=event=>{
 allocationInputs.forEach(input=>input.addEventListener('input',allocationTotal));
 $('allocation-form').onsubmit=event=>{
   event.preventDefault();
-  const {points,share,cash,preview,valid}=allocationTotal();
-  if(!valid || (share && cash===null)){
-    $('allocation-status').textContent='請先輸入實點現金，並確認分配比例。';return;
+  const {points,share,preview,valid}=allocationTotal();
+  if(!valid){
+    $('allocation-status').textContent='請確認分配比例。';return;
   }
   if(!share && !today().allocation?.points && today().allocation) return;
-  const value=share?{...Object.fromEntries(allocationFields.map((field,i)=>[field,preview[i]])),points}:undefined;
+  const value=share?{...Object.fromEntries(allocationFields.map((field,i)=>[field,preview[i]])),points,basis:'income'}:undefined;
   saveDayField('allocation',value,'allocation-status');
 };
 function renderDayNotes(){
