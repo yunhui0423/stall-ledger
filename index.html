@@ -163,6 +163,13 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 #opening-cash-panel .actions button:first-child{color:#154d3a;background:#e1f0e5;border-color:#b7cebf}
 #journal-panel textarea{min-height:64px}
 #journal-saved{background:#e1f0e5;color:#154d3a;padding:3px 7px;border-radius:6px}
+#receipt-demo-orders dl div{padding:7px;border-radius:7px}
+#receipt-demo-orders .demo-settled{color:#104b38;background:#e1f0e5}
+#receipt-demo-total{font-size:1.12rem;font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:no-preference){
+  #receipt-demo-total{animation:receipt-refresh .45s ease-out}
+  @keyframes receipt-refresh{from{opacity:.55}to{opacity:1}}
+}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -217,6 +224,10 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
    <details id="receipt-demo" class="lead">
     <summary>模擬第三方收款通知</summary>
     <p class="muted lead">示範用的訂單與通知，不會寫入帳本。</p>
+    <div class="actions lead">
+     <button type="button" id="demo-play" class="primary">播放動態展示</button>
+     <span id="demo-step" class="muted" aria-live="polite"></span>
+    </div>
     <div id="receipt-demo-orders" class="lead"></div>
     <div class="actions lead">
      <button type="button" id="demo-cod">送出物流撥款通知</button>
@@ -1138,11 +1149,12 @@ const demoNotices={
 const seenDemoNotices=new Set();
 const settledDemoOrders=new Set();
 let lastDemoNotice=null;
+let demoPlayback=null;
 function renderReceiptDemo(){
   const host=$('receipt-demo-orders');
   const details=control('dl');
   for(const order of demoOrders){
-    const row=control('div');
+    const row=control('div','',settledDemoOrders.has(order.id)?{class:'demo-settled'}:{});
     row.append(control('dt',order.id+' · '+order.label+' · '+format(order.amount)),
       control('dd',settledDemoOrders.has(order.id)?'已到帳':order.pending));
     details.append(row);
@@ -1150,7 +1162,7 @@ function renderReceiptDemo(){
   const total=demoOrders.filter(order=>settledDemoOrders.has(order.id))
     .reduce((sum,order)=>sum+order.amount,0);
   host.replaceChildren(details,control('p','模擬電子收入 '+format(total),{id:'receipt-demo-total'}));
-  $('demo-repeat').disabled=!lastDemoNotice;
+  $('demo-repeat').disabled=!lastDemoNotice || demoPlayback!==null;
 }
 function receiveDemoNotice(notice){
   const order=demoOrders.find(item=>item.id===notice.order);
@@ -1172,12 +1184,41 @@ function receiveDemoNotice(notice){
 $('demo-cod').onclick=()=>receiveDemoNotice(demoNotices.cod);
 $('demo-transfer').onclick=()=>receiveDemoNotice(demoNotices.transfer);
 $('demo-repeat').onclick=()=>{if(lastDemoNotice) receiveDemoNotice(lastDemoNotice);};
-$('demo-reset').onclick=()=>{
+function resetReceiptDemo(){
+  clearTimeout(demoPlayback);
+  demoPlayback=null;
   seenDemoNotices.clear();
   settledDemoOrders.clear();
   lastDemoNotice=null;
   $('receipt-demo-status').textContent='';
+  $('demo-step').textContent='';
+  for(const id of ['demo-play','demo-cod','demo-transfer']) $(id).disabled=false;
   renderReceiptDemo();
+}
+$('demo-reset').onclick=resetReceiptDemo;
+$('demo-play').onclick=()=>{
+  resetReceiptDemo();
+  const steps=[
+    {label:'第 2 步／共 4 步 · 物流撥款 800 元',notice:demoNotices.cod},
+    {label:'第 3 步／共 4 步 · 銀行轉帳到帳 600 元',notice:demoNotices.transfer},
+    {label:'第 4 步／共 4 步 · 重複通知不再入帳',notice:demoNotices.transfer}
+  ];
+  for(const id of ['demo-play','demo-cod','demo-transfer','demo-repeat']) $(id).disabled=true;
+  $('demo-step').textContent='第 1 步／共 4 步 · 兩筆訂單等待到帳';
+  function playNext(index){
+    demoPlayback=setTimeout(()=>{
+      const step=steps[index];
+      $('demo-step').textContent=step.label;
+      receiveDemoNotice(step.notice);
+      if(index+1<steps.length) playNext(index+1);
+      else{
+        demoPlayback=null;
+        $('demo-play').textContent='再播一次';
+        for(const id of ['demo-play','demo-cod','demo-transfer','demo-repeat']) $(id).disabled=false;
+      }
+    },1600);
+  }
+  playNext(0);
 };
 renderReceiptDemo();
 $('parse').onclick=()=>{
