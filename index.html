@@ -331,7 +331,6 @@ const pref=(name,value)=>{
   return null;
 };
 const methods={cod:'貨到付款',line:'LINE Pay',jko:'街口支付',transfer:'轉帳',card:'刷卡',other:'其他電子支付'};
-const isCashOnDelivery=note=>/貨到付款|到付貨款|代收貨款|貨款代收/.test(note);
 function payment(item){
   if(item.type==='unpaid') return item.method==='cod' || isCashOnDelivery(item.note)?'cod':'';
   if(!item.type.startsWith('digital')) return '';
@@ -372,6 +371,7 @@ function amount(token){
   }
   return total+group+digit*(last>=100 && !zero ? last/10 : 1);
 }
+const isCashOnDelivery=note=>/貨到付款|到付貨款|代收貨款|貨款代收/.test(note);
 function parseLine(note){
   const money=String.raw`(?:\d{1,3}(?:,\d{3})+|\d+|[零〇一二三四五六七八九兩两十百千萬万]+)`;
   const text=note.replace(/找零金|開攤備用現金/g,'');
