@@ -105,7 +105,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 }
 </style>
 <main>
- <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div></header>
+ <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div></header>
  <nav id="ledger-nav" class="actions" aria-label="帳本導覽">
   <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
   <button type="button" id="nav-closeout" aria-controls="closeout-work" aria-pressed="false">收攤對帳</button>
@@ -115,11 +115,11 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <dialog id="settings" aria-labelledby="settings-title">
   <div class="bar"><h2 id="settings-title">帳本設定</h2><button id="close-settings" type="button">關閉</button></div>
   <form id="settings-form">
-   <label>預設找零金（元） <input id="settings-float" type="number" min="1" max="999999999" step="1" inputmode="numeric"></label>
+   <label>開攤備用現金預設值（元） <input id="settings-float" type="number" min="1" max="999999999" step="1" inputmode="numeric"></label>
    <fieldset class="lead"><legend>預設存款比例</legend>
     <div class="settings-ratios">
      <label>銀行 %<input id="settings-bank" type="number" min="0" max="100" step="0.01"></label>
-     <label>找零金 %<input id="settings-float-ratio" type="number" min="0" max="100" step="0.01"></label>
+     <label>下次找零金 %<input id="settings-float-ratio" type="number" min="0" max="100" step="0.01"></label>
      <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
     </div>
    </fieldset>
@@ -165,10 +165,10 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p id="status" class="notice" role="status"></p>
- <details class="lead"><summary>快速帶入找零金</summary>
+ <details class="lead"><summary>開攤備用現金</summary>
  <p class="muted lead" id="float-default-info"></p>
  <div class="actions lead"><button id="float-use" type="button">帶入預設</button>
- <button id="float-prev" type="button">沿用昨日找零金</button></div>
+ <button id="float-prev" type="button">沿用昨日金額</button></div>
  <p id="float-status" class="notice" role="status"></p></details>
   <details id="journal-panel" class="lead"><summary>記帳日記 <span id="journal-saved" class="muted" hidden>· 已有備忘</span></summary>
    <form id="journal-form"><label for="journal">當日備忘</label>
@@ -212,7 +212,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
     <p id="incident-status" class="notice" role="status"></p>
    </form>
   </details>
-  <p class="muted lead">帳面現金＝找零金＋現金收入－現金支出。電子支付另計。</p>
+  <p class="muted lead">帳面現金＝開攤備用現金＋現金收入－現金支出。電子支付另計。</p>
  </section>
 <section class="lead" id="allocation-panel">
  <h2>存款分配</h2>
@@ -245,7 +245,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-const types = {float:'找零金',cashIn:'現金收入',digitalIn:'電子收入',cashOut:'現金支出',digitalOut:'電子支出',unpaid:'未收款'};
+const types = {float:'開攤備用現金',cashIn:'現金收入',digitalIn:'電子收入',cashOut:'現金支出',digitalOut:'電子支出',unpaid:'未收款'};
 const example = '早上找零金放了五百，下午現金賣了兩千三，LINE Pay 收八百，補貨花四百五。';
 const key = 'stall-ledger-v1';
 const date = new Date();
@@ -301,13 +301,13 @@ function amount(token){
 }
 function parseLine(note){
   const money=String.raw`(?:\d{1,3}(?:,\d{3})+|\d+|[零〇一二三四五六七八九兩两十百千萬万]+)`;
-  const text=note.replace(/找零金/g,'');
+  const text=note.replace(/找零金|開攤備用現金/g,'');
   const tokens=text.match(new RegExp(money,'g')) || [];
   const digital=/line\s*pay|街口|電子支付|轉帳|刷卡|悠遊卡|全支付/i.test(note);
   const unpaid=/賒帳|賒欠|未收款|還沒(?:付|收到)|還未(?:付|收到)|假轉帳/i.test(note);
   const outgoing=/支出|補貨|付了|付運費|付租金|花|成本|買了|買進|進貨|退款|退給/.test(note);
   const incoming=/收入|賣|收了|收到|收\s*[\d零一二三四五六七八九兩十百千萬]|營業額|入帳/.test(note);
-  const float=/找零金|備用金|起始現金/.test(note);
+  const float=/找零金|開攤備用現金|備用金|起始現金/.test(note);
   const settled=!outgoing && /(?:收到|收回|收了).*(?:賒帳|欠款)|(?:賒帳|欠款).*(?:已收|收到了)/.test(note) && !/還[沒未]|未收|沒收到|假轉帳/.test(note);
   const conflict=/取消|作廢|沒花錢|未支付|不用付|沒收到退款/.test(note) || (unpaid && outgoing);
   const type=(unpaid && outgoing) || /取消|作廢/.test(note)?'':settled?(digital?'digitalIn':'cashIn'):unpaid?'unpaid':float && !outgoing && !incoming?'float':outgoing!==incoming && !float?
@@ -337,7 +337,7 @@ function parseLine(note){
     value='';
     flag.push(unpaid?'這筆未收款金額是多少？':'這筆實際金額是多少元？');
   }
-  if(!type) flag.push('這筆是收入、支出、找零金，還是未收款？');
+  if(!type) flag.push('這筆是收入、支出、開攤備用現金，還是未收款？');
   return {note,type,value,flag:flag.join(' ')};
 }
 const englishUnits='zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen'.split(' ');
@@ -371,7 +371,7 @@ function parseEnglish(note){
   const valid=!uncertain && Number.isSafeInteger(value) && value>0 && value<=999999999;
   const flags=[];
   if(!valid) flags.push('請確認這筆的實際金額（新台幣）。');
-  if(!type) flags.push('請選擇收入、支出、找零金或未收款。');
+  if(!type) flags.push('請選擇收入、支出、開攤備用現金或未收款。');
   return {note,type,value:valid?value:'',flag:flags.join(' ')};
 }
 function parseMixed(note){
@@ -414,7 +414,7 @@ function control(tag, text, attributes={}){
 function field(label,input){
   const box=control('label',label); box.append(input); return box;
 }
-const directionLabels={in:'收入',out:'支出',float:'找零金',unpaid:'未收款'};
+const directionLabels={in:'收入',out:'支出',float:'開攤備用現金',unpaid:'未收款'};
 const categories=['銷售收入','其他收入','進貨成本','包材費','攤位租金','運費','水電瓦斯費','支付手續費','銷售退款','其他支出'];
 const defaultAccountOptions=()=>[...categories,...(getLedgerSettings().categories || [])];
 function getLedgerSettings(){
@@ -473,18 +473,18 @@ function addDraft(item){
 }
 function showDefaultFloat(){
   const value=Number(getLedgerSettings().float ?? pref('float-default'));
-  $('float-default-info').textContent=value>0?'預設 '+format(value):'可到「設定」填寫預設找零金。';
+  $('float-default-info').textContent=value>0?'預設 '+format(value):'可到「設定」填寫開攤備用現金。';
 }
 function draftFloat(value){
   const status=$('float-status');
   if(!Number.isSafeInteger(value) || value<=0 || value>999999999){
-    status.textContent='沒有可帶入的找零金，請確認金額。';return;
+    status.textContent='沒有可帶入的開攤備用現金，請確認金額。';return;
   }
   if(today().entries.some(item=>item.type==='float') ||
     [...$('draft').children].some(row=>row.read().type==='float')){
-    status.textContent='這一天已有找零金或待確認的找零金，請直接更正該筆。';return;
+    status.textContent='這一天已有開攤備用現金或待確認的同類紀錄，請直接更正該筆。';return;
   }
-  addDraft({note:'起始找零金',type:'float',value});
+  addDraft({note:'開攤備用現金',type:'float',value});
   status.textContent='已加入待確認清單。';
 }
 $('float-use').onclick=()=>draftFloat(Number(getLedgerSettings().float ?? pref('float-default')));
