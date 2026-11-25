@@ -153,7 +153,13 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <button type="button" id="cloud-import" hidden>匯入此瀏覽器的舊帳</button>
   <button type="button" id="cloud-logout" hidden>登出</button>
  </div>
+ <p id="cloud-identity" class="lead" hidden></p>
  <p id="cloud-status" class="notice" role="status"></p>
+ <details id="login-history" class="lead" hidden>
+  <summary>登入紀錄</summary>
+  <p class="muted">本瀏覽器最近 10 次成功登入。</p>
+  <ul id="login-history-list"></ul>
+ </details>
 </section>
 <div id="daily-view">
  <div class="date-bar"><label>帳目日期 <input type="date" id="day"></label></div>
@@ -1020,6 +1026,15 @@ if(!window.AndroidLedger && location.protocol==='https:'){
       $('cloud-login').hidden=active;
       $('cloud-sync').hidden=!active;
       $('cloud-logout').hidden=!active;
+    },
+    identity(label,times){
+      $('cloud-identity').hidden=!label;
+      $('cloud-identity').textContent=label?'目前帳號：'+label:'';
+      $('login-history').hidden=!label;
+      if(!label) $('login-history').open=false;
+      $('login-history-list').replaceChildren(...(times.length
+        ? times.map(time=>control('li',new Date(time).toLocaleString('zh-TW')))
+        : [control('li','這個瀏覽器還沒有登入時間紀錄。')]));
     },
     decode:readBackup,
     hasDraft:()=>$('draft').children.length>0,
