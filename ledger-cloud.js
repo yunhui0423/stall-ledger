@@ -32,7 +32,7 @@ export async function startCloud(ui) {
   }
   function showIdentity(account,history=loginHistory(account)) {
     const identity = account ? (account.displayName || account.email || 'Google 帳號') : '';
-    ui.identity(identity,history);
+    ui.identity?.(identity,history);
   }
   function recordLogin(account) {
     const history = [Date.now(),...loginHistory(account)].slice(0,10);
