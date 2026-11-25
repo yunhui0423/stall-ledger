@@ -77,13 +77,36 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #incident-list{padding-inline-start:20px}
 #incident-list li{margin-block:8px}
 #incident-list .actions{margin-top:4px}
+#settings{width:min(520px,calc(100% - 24px));max-height:90vh;border:1px solid #b7d1bd;border-radius:14px;padding:16px;color:inherit}
+#settings::backdrop{background:#173c2c66}
+.settings-ratios{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.settings-ratios input{width:100%}
+@media(min-width:861px){.row,#draft .row{grid-template-columns:minmax(120px,2fr) minmax(72px,.8fr) minmax(88px,1fr) minmax(92px,1fr) minmax(104px,1fr) auto}}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div></header>
  <nav id="ledger-nav" class="actions" aria-label="帳本導覽">
   <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
   <button type="button" id="nav-history" aria-controls="history-view" aria-pressed="false">歷史資料</button>
+  <button type="button" id="open-settings" aria-haspopup="dialog">設定</button>
  </nav>
+ <dialog id="settings" aria-labelledby="settings-title">
+  <div class="bar"><h2 id="settings-title">帳本設定</h2><button id="close-settings" type="button">關閉</button></div>
+  <form id="settings-form">
+   <label>預設找零金（元） <input id="settings-float" type="number" min="1" max="999999999" step="1" inputmode="numeric"></label>
+   <fieldset class="lead"><legend>預設存款比例</legend>
+    <div class="settings-ratios">
+     <label>銀行 %<input id="settings-bank" type="number" min="0" max="100" step="0.01"></label>
+     <label>找零金 %<input id="settings-float-ratio" type="number" min="0" max="100" step="0.01"></label>
+     <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
+    </div>
+   </fieldset>
+   <label class="lead">自訂會計科目（每行一個）<textarea id="settings-categories" maxlength="600" placeholder="例如：外送平台手續費"></textarea></label>
+   <p class="muted">設定保存在目前的瀏覽器。</p>
+   <p id="settings-status" class="notice" role="status"></p>
+   <button class="primary lead" type="submit">儲存設定</button>
+  </form>
+ </dialog>
  <section id="cloud-panel" class="lead" hidden aria-label="雲端帳本">
  <div class="actions">
   <button type="button" id="cloud-login">使用 Google 登入</button>
@@ -119,8 +142,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <section id="closeout">
   <h2>當日收攤</h2>
  <details class="lead"><summary>快速帶入找零金</summary>
- <label for="float-default" class="lead">預設找零金（元）</label>
- <input id="float-default" type="number" min="1" max="999999999" step="1" inputmode="numeric">
+ <p class="muted lead" id="float-default-info"></p>
  <div class="actions lead"><button id="float-use" type="button">帶入預設</button>
  <button id="float-prev" type="button">沿用昨日找零金</button></div>
  <p id="float-status" class="notice" role="status"></p></details>
@@ -158,7 +180,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <label>下次找零金（%） <input id="alloc-float" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-float" for="alloc-float"></output></label>
   <label>留作營運周轉（%） <input id="alloc-reserve" type="number" min="0" max="100" step="0.01" inputmode="decimal"> <output id="amount-reserve" for="alloc-reserve"></output></label>
   <p id="allocation-base" class="muted lead"></p><p id="allocation-total" class="lead" aria-live="polite"></p>
-  <button>儲存分配</button><p id="allocation-status" class="notice" role="status"></p>
+  <button type="button" id="use-ratios">帶入預設比例</button> <button>儲存分配</button><p id="allocation-status" class="notice" role="status"></p>
  </form>
 </section>
 </div>
@@ -363,29 +385,52 @@ function control(tag, text, attributes={}){
 function field(label,input){
   const box=control('label',label); box.append(input); return box;
 }
+const directionLabels={in:'收入',out:'支出',float:'找零金',unpaid:'未收款'};
+const categories=['銷售收入','其他收入','進貨成本','包材費','攤位租金','運費','水電瓦斯費','支付手續費','銷售退款','其他支出'];
+const defaultAccountOptions=()=>[...categories,...(getLedgerSettings().categories || [])];
+function getLedgerSettings(){
+  try {return JSON.parse(pref('ledger-options') || '{}') || {};}
+  catch {return {};}
+}
+function entryDirection(type){
+  return type.endsWith('In')?'in':type.endsWith('Out')?'out':type;
+}
+function entryType(direction,method){
+  if(direction!=='in' && direction!=='out') return direction;
+  if(!method) return '';
+  return (method==='cash'?'cash':'digital')+(direction==='in'?'In':'Out');
+}
 function row(item, onRemove, editing=false){
   const box=control('div','',{class:'row'});
   const note=control('input','',{required:'',maxlength:240}); note.value=item.note;
   const value=control('input','',{type:'number',min:1,step:1,max:999999999,required:'',inputmode:'numeric'}); value.value=item.value;
   const type=control('select','',{required:''});
-  type.append(control('option','請選擇',{value:''}),...Object.entries(types).map(([value,label])=>control('option',label,{value})));
-  type.value=item.type;
+  type.append(control('option','請選擇',{value:''}),...Object.entries(directionLabels).map(([value,label])=>control('option',label,{value})));
+  type.value=entryDirection(item.type);
   const remove=control('button',editing?'刪除':'移除',{type:'button'});
   remove.onclick=()=>onRemove(box);
   const method=control('select');
-  method.append(...Object.entries(methods).map(([value,label])=>control('option',label,{value})));
+  method.append(control('option','請選擇',{value:''}),control('option','現金',{value:'cash'}),
+    ...Object.entries(methods).map(([value,label])=>control('option',label,{value})));
   const methodField=field('付款方式',method);
-  const updateMethod=()=>{methodField.hidden=!type.value.startsWith('digital');};
-  method.value=payment(item) || 'other';
-  type.addEventListener('change',()=>{
-    if(type.value.startsWith('digital')) method.value=payment({type:type.value,note:note.value});
-    updateMethod();
-  });
+  const updateMethod=()=>{
+    const active=type.value==='in' || type.value==='out';
+    methodField.hidden=!active;
+    method.required=active;
+    method.disabled=!active;
+  };
+  method.value=item.type.startsWith('cash')?'cash':payment(item);
+  type.addEventListener('change',updateMethod);
+  const account=control('select','',{'data-account':''});
+  const options=new Set([...defaultAccountOptions(),item.account].filter(Boolean));
+  account.append(control('option','未分類',{value:''}),
+    ...[...options].map(value=>control('option',value,{value})));
+  account.value=item.account || '';
   updateMethod();
-  box.append(field('摘要',note),field('金額（元）',value),field('類型',type),methodField,remove);
+  box.append(field('摘要',note),field('金額（元）',value),field('類型',type),methodField,field('會計科目',account),remove);
   if(!item.flag && item.type==='unpaid') box.append(control('p','這筆列為未收款，收到後可更正為現金或電子收入。',{class:'flag'}));
   if(item.flag) box.append(control('p',item.flag,{class:'flag'}));
-  box.read=()=>({note:note.value.trim(),type:type.value,value:value.valueAsNumber,...(type.value.startsWith('digital')?{method:method.value}:{})});
+  box.read=()=>({note:note.value.trim(),type:entryType(type.value,method.value),value:value.valueAsNumber,...(method.required && method.value!=='cash'?{method:method.value}:{}),...(account.value?{account:account.value}:{})});
   return box;
 }
 function updateReview(){
@@ -397,9 +442,10 @@ function addDraft(item){
   $('draft').append(row(item, box=>{box.remove();updateReview();}));
   updateReview();
 }
-const floatDefault=$('float-default');
-floatDefault.value=pref('float-default') || '';
-floatDefault.onchange=()=>{if(floatDefault.validity.valid)pref('float-default',floatDefault.value);};
+function showDefaultFloat(){
+  const value=Number(getLedgerSettings().float ?? pref('float-default'));
+  $('float-default-info').textContent=value>0?'預設 '+format(value):'可到「設定」填寫預設找零金。';
+}
 function draftFloat(value){
   const status=$('float-status');
   if(!Number.isSafeInteger(value) || value<=0 || value>999999999){
@@ -412,7 +458,7 @@ function draftFloat(value){
   addDraft({note:'起始找零金',type:'float',value});
   status.textContent='已加入待確認清單。';
 }
-$('float-use').onclick=()=>draftFloat(floatDefault.valueAsNumber);
+$('float-use').onclick=()=>draftFloat(Number(getLedgerSettings().float ?? pref('float-default')));
 $('float-prev').onclick=()=>{
   const yesterday=new Date($('day').value+'T00:00:00Z');
   yesterday.setUTCDate(yesterday.getUTCDate()-1);
@@ -429,6 +475,43 @@ function sums(entries){
 const allocationFields=['bank','float','reserve'];
 const hasDayNotes=data=>Boolean(data?.journal || data?.allocation);
 const allocationInputs=allocationFields.map(field=>$('alloc-'+field));
+const settingsFields=['settings-bank','settings-float-ratio','settings-reserve'].map(id=>$(id));
+$('open-settings').onclick=()=>{
+  const current=getLedgerSettings();
+  $('settings-float').value=current.float ?? pref('float-default') ?? '';
+  settingsFields.forEach((input,i)=>{input.value=current.ratios?.[i] ?? '';});
+  $('settings-categories').value=(current.categories || []).join('\n');
+  $('settings-status').textContent='';
+  $('settings').showModal();
+};
+$('close-settings').onclick=()=>$('settings').close();
+$('settings-form').onsubmit=event=>{
+  event.preventDefault();
+  const ratios=settingsFields.map(input=>input.valueAsNumber || 0);
+  if(ratios.reduce((sum,value)=>sum+Math.round(value*100),0)>10000){
+    $('settings-status').textContent='預設比例合計不可超過 100%。';return;
+  }
+  const categories=[...new Set($('settings-categories').value.split(/\r?\n/).map(value=>value.trim()).filter(Boolean))];
+  if(categories.some(value=>value.length>60)){
+    $('settings-status').textContent='每個會計科目最多 60 個字。';return;
+  }
+  try{
+    localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,categories}));
+  }catch{$('settings-status').textContent='瀏覽器無法儲存設定。';return;}
+  showDefaultFloat();
+  for(const select of document.querySelectorAll('.row select[data-account]')){
+    const selected=select.value;
+    select.replaceChildren(control('option','未分類',{value:''}),...[...new Set([...defaultAccountOptions(),selected].filter(Boolean))].map(value=>control('option',value,{value})));
+    select.value=selected;
+  }
+  $('settings').close();
+};
+$('use-ratios').onclick=()=>{
+  const ratios=getLedgerSettings().ratios;
+  if(!ratios?.some(Boolean)){$('allocation-status').textContent='可到「設定」填寫預設存款比例。';return;}
+  allocationInputs.forEach((input,i)=>{input.value=ratios[i];});
+  allocationTotal();
+};
 function allocationAmounts(cash, points){
   const amounts=points.map(point=>Math.floor(cash*point/10000));
   const target=Math.floor(cash*points.reduce((sum,point)=>sum+point,0)/10000);
@@ -528,7 +611,7 @@ $('nav-history').onclick=()=>showLedgerView(true);
 function searchHistory(rows, keyword){
   const words=keyword.normalize('NFKC').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return rows.filter(row=>{
-    const haystack=[row.day,row.journal,row.reason,row.note,...row.entries.map(item=>item.note)]
+    const haystack=[row.day,row.journal,row.reason,row.note,...row.entries.flatMap(item=>[item.note,item.account || ''])]
       .join(' ').normalize('NFKC').toLowerCase();
     return words.every(word=>haystack.includes(word));
   });
@@ -823,6 +906,7 @@ function readBackup(text){
       (data.cash.trim()!=='' && Number.isSafeInteger(Number(data.cash)) && Number(data.cash)>=0));
     const validEntries=Array.isArray(data?.entries) && data.entries.every(item=>
       (item?.method===undefined || Object.hasOwn(methods,item.method)) &&
+      (item?.account===undefined || (typeof item.account==='string' && item.account.length<=60)) &&
       typeof item?.note==='string' && item.note.trim()!=='' && item.note.length<=240 &&
       Object.hasOwn(types,item.type) && Number.isSafeInteger(item.value) && item.value>0 && item.value<=999999999);
     const incident=data?.incident;
@@ -899,10 +983,11 @@ function downloadFile(body,mime,filename){
 }
 const csvCell=value=>'"'+String(value).replace(/^[\s]*[=+\-@]/, match=>"'"+match).replaceAll('"','""')+'"';
 $('export').onclick=()=>{
-  const lines=[['日期','摘要','類型','金額','付款方式'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value,methods[payment(item)] || (item.type.startsWith('cash') || item.type==='float'?'現金':'')])];
+  const lines=[['日期','摘要','類型','金額','付款方式','會計科目'],...today().entries.map(item=>[$('day').value,item.note,types[item.type],item.value,methods[payment(item)] || (item.type.startsWith('cash') || item.type==='float'?'現金':''),item.account || ''])];
   downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8','收攤對帳_'+$('day').value+'.csv');
 };
 render();
+showDefaultFloat();
 if(!window.AndroidLedger && location.protocol==='https:'){
   const cloudStatus=text=>$('cloud-status').textContent=text;
   import('./ledger-cloud.js').then(({startCloud})=>startCloud({
