@@ -22,6 +22,24 @@ export async function startCloud(ui) {
   let loadToken = 0;
   let loginInProgress = false;
 
+  const historyKey = id => cacheKey(id) + '-login-history';
+  function loginHistory(account) {
+    if (!account) return [];
+    try {
+      const history = JSON.parse(localStorage.getItem(historyKey(account.uid)) || '[]');
+      return Array.isArray(history) ? history.filter(time => Number.isFinite(time) && Number.isFinite(+new Date(time))).slice(0,10) : [];
+    } catch { return []; }
+  }
+  function showIdentity(account,history=loginHistory(account)) {
+    const identity = account ? (account.displayName || account.email || 'Google 帳號') : '';
+    ui.identity(identity,history);
+  }
+  function recordLogin(account) {
+    const history = [Date.now(),...loginHistory(account)].slice(0,10);
+    try { localStorage.setItem(historyKey(account.uid),JSON.stringify(history)); } catch {}
+    if (auth.currentUser?.uid === account.uid) showIdentity(account,history);
+  }
+
   function cache() {
     try { localStorage.setItem(cacheKey(user.uid), JSON.stringify({revision,pending})); return true; }
     catch { return false; }
@@ -61,7 +79,10 @@ export async function startCloud(ui) {
       if (loginInProgress) return;
       loginInProgress = true;
       ui.status('正在開啟 Google 登入。若沒看到新視窗，請用 Chrome 或 Safari 直接開啟本站。');
-      try { await authApi.signInWithPopup(auth, provider); }
+      try {
+        const result = await authApi.signInWithPopup(auth, provider);
+        recordLogin(result.user);
+      }
       catch (error) {
         const messages = {
           'auth/popup-blocked': '瀏覽器擋住了 Google 登入視窗。請允許本站的彈出視窗，或用 Chrome 或 Safari 直接開啟本站。',
@@ -132,6 +153,7 @@ export async function startCloud(ui) {
   }
   authApi.onAuthStateChanged(auth, account => {
     ui.authenticated(Boolean(account));
+    showIdentity(account);
     void loadAccount(account);
   });
 }
