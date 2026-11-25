@@ -170,6 +170,11 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   #receipt-demo-total{animation:receipt-refresh .45s ease-out}
   @keyframes receipt-refresh{from{opacity:.55}to{opacity:1}}
 }
+#tour-entry{margin:8px 0 12px}
+#tour-entry a,#site-tour a{color:var(--accent);font-weight:650}
+#site-tour{position:sticky;top:0;z-index:4;margin-bottom:10px;background:#fff9ed;border-color:#d9ba86;padding:10px 14px}
+#site-tour .lead{margin-top:5px}
+body.tour-mode :is(h2,summary){scroll-margin-top:155px}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -200,6 +205,16 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   <button type="button" id="nav-closeout" aria-controls="closeout-work" aria-pressed="false">收攤對帳</button>
   <button type="button" id="nav-history" aria-controls="history-view" aria-pressed="false">歷史資料</button>
  </nav>
+ <p id="tour-entry" hidden><a href="?demo=1" target="_blank" rel="noopener">觀看全站動態展示</a></p>
+ <section id="site-tour" hidden aria-label="全站動態展示">
+  <div class="bar"><h2>全站動態展示</h2><a href="./">返回正式帳本</a></div>
+  <p id="site-tour-step" class="lead" aria-live="polite">範例帳本會在此播放，資料只留在這個分頁。</p>
+  <div class="actions lead">
+   <button id="tour-play" type="button" class="primary">開始播放</button>
+   <button id="tour-next" type="button">下一步</button>
+   <button id="tour-reset" type="button">從頭開始</button>
+  </div>
+ </section>
 
 <div id="daily-view">
  <div class="date-bar"><label>帳目日期 <input type="date" id="day"></label></div>
@@ -370,15 +385,21 @@ const $ = id => document.getElementById(id);
 const types = {float:'開攤備用現金',cashIn:'現金收入',digitalIn:'電子收入',cashOut:'現金支出',digitalOut:'電子支出',unpaid:'未收款'};
 const example = '早上找零金放了五百，下午現金賣了兩千三，LINE Pay 收八百，補貨花四百五。';
 const key = 'stall-ledger-v1';
+const tourMode=!window.AndroidLedger && new URLSearchParams(location.search).get('demo')==='1';
+const tourPrefs=new Map();
+const ledgerStorage=tourMode?{
+  getItem:name=>tourPrefs.get(name) ?? null,
+  setItem:(name,value)=>tourPrefs.set(name,value)
+}:{getItem:name=>localStorage.getItem(name),setItem:(name,value)=>localStorage.setItem(name,value)};
 const date = new Date();
 $('day').value = [date.getFullYear(), date.getMonth()+1, date.getDate()].map(n=>String(n).padStart(2,'0')).join('-');
 let records = {};
-try { records = JSON.parse(localStorage.getItem(key) || '{}') || {}; }
+try { records = JSON.parse(ledgerStorage.getItem(key) || '{}') || {}; }
 catch { $('storage').textContent = '瀏覽器無法讀取舊紀錄。'; }
 const pref=(name,value)=>{
   try{
-    if(value===undefined) return localStorage.getItem(key+'-'+name);
-    localStorage.setItem(key+'-'+name,value);
+    if(value===undefined) return ledgerStorage.getItem(key+'-'+name);
+    ledgerStorage.setItem(key+'-'+name,value);
   } catch {}
   return null;
 };
@@ -399,7 +420,7 @@ let persistCloud=null;
 let localLedger=records;
 function persist(next){
   if(persistCloud) persistCloud(next);
-  else {localStorage.setItem(key,JSON.stringify(next));localLedger=next;}
+  else {ledgerStorage.setItem(key,JSON.stringify(next));localLedger=next;}
 }
 function save(){
   try { persist(records); }
@@ -747,7 +768,7 @@ $('settings-form').onsubmit=event=>{
   }
 
   try{
-    localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,accountRules:categories,accountRuleVersion:2,setupComplete:true}));
+    ledgerStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,accountRules:categories,accountRuleVersion:2,setupComplete:true}));
   }catch{$('settings-status').textContent='瀏覽器無法儲存設定。';return;}
   showDefaultFloat();
   for(const select of document.querySelectorAll('.row select[data-account]')){
@@ -1405,7 +1426,7 @@ $('export').onclick=()=>{
 render();
 showDefaultFloat();
 startSetupIfNeeded();
-if(!window.AndroidLedger && location.protocol==='https:'){
+if(!tourMode && !window.AndroidLedger && location.protocol==='https:'){
   const cloudStatus=text=>$('cloud-status').textContent=text;
   import('./ledger-cloud.js?v=2').then(({startCloud})=>startCloud({
     setup(actions){
@@ -1459,7 +1480,7 @@ if(!window.AndroidLedger && location.protocol==='https:'){
     console.warn('Cloud ledger initialization failed',error);
   });
 }
-if(window.AndroidLedger) $('app-install').hidden=true;
+if(window.AndroidLedger || tourMode) $('app-install').hidden=true;
 let installPrompt;
 window.addEventListener('beforeinstallprompt', event=>{
   event.preventDefault();
@@ -1473,7 +1494,125 @@ $('install-app').onclick=async ()=>{
   $('install-app').hidden=true;
   await prompt.prompt();
 };
-if(!window.AndroidLedger && 'serviceWorker' in navigator && location.protocol==='https:'){
+if(!tourMode && !window.AndroidLedger) $('tour-entry').hidden=false;
+if(tourMode){
+  document.body.classList.add('tour-mode');
+  $('site-tour').hidden=false;
+  let timer=null;
+  let step=0;
+  const submit=id=>$(id).requestSubmit();
+  const steps=[
+    ['設定帳本與會計科目',()=>{
+      showLedgerView('settings');
+      $('settings-float').value='500';
+      $('settings-bank').value='70';
+      $('settings-float-ratio').value='20';
+      $('settings-reserve').value='10';
+    }],
+    ['帶入開攤現金並拆出三筆收支',()=>{
+      submit('settings-form');
+      showLedgerView('daily');
+      $('speech').value='現金賣了八百，買了紙盒花一百五，今天繳稅五百';
+      $('parse').click();
+      $('float-use').click();
+      focusLedgerHeading('review-title');
+    }],
+    ['確認會計科目並入帳，寫下今日備忘',()=>{
+      submit('review');
+      $('journal').value='示範帳本：已核對今日收支，記錄紙盒及稅金。';
+      submit('journal-form');
+      focusLedgerHeading('posted-title');
+    }],
+    ['模擬兩筆網路收款及重複通知',()=>{
+      $('receipt-demo').open=true;
+      $('receipt-demo').querySelector('summary').scrollIntoView({block:'start'});
+      $('demo-play').click();
+    },5300],
+    ['帶入兩筆已到帳的網路收款',()=>{
+      $('preset-cod-paid').click();
+      $('preset-bank-paid').click();
+      const values=$('draft').querySelectorAll('input[type=number]');
+      values[values.length-2].value='800';
+      values[values.length-1].value='600';
+      submit('review');
+    }],
+    ['收攤點現金，查看短少並記錄原因',()=>{
+      showLedgerView('closeout');
+      $('cash').value='600';
+      $('cash').oninput({target:$('cash')});
+      $('incident-panel').open=true;
+      $('incident-reason').value='找錯錢';
+      $('incident-note').value='示範：多找客人 50 元。';
+      submit('incident');
+      $('closeout').querySelector('h2').scrollIntoView({block:'start'});
+    }],
+    ['依當日已收營收套用 70%、20%、10% 分配',()=>{
+      submit('allocation-form');
+      $('allocation-panel').querySelector('h2').scrollIntoView({block:'start'});
+    }],
+    ['回查每日紀錄與本月科目統計',()=>{
+      showLedgerView('history');
+      $('history-all').checked=false;
+      $('history-month').value=$('day').value.slice(0,7);
+      $('history-query').value='';
+      renderMonth();
+      $('account-summary').open=true;
+      $('history-title').scrollIntoView({block:'start'});
+    }]
+  ];
+  function resetTour(){
+    clearTimeout(timer);
+    timer=null;
+    step=0;
+    tourPrefs.clear();
+    records={};
+    localLedger=records;
+    $('draft').replaceChildren();
+    updateReview();
+    $('speech').value='';
+    $('status').textContent='';
+    $('posted-status').textContent='';
+    resetReceiptDemo();
+    showDefaultFloat();
+    startSetupIfNeeded();
+    render();
+    $('site-tour-step').textContent='準備完成。按「開始播放」或逐步查看。';
+    $('tour-play').textContent='開始播放';
+    $('tour-next').disabled=false;
+  }
+  function advanceTour(automatic){
+    const [label,action,delay]=steps[step];
+    action();
+    step++;
+    $('site-tour-step').textContent='第 '+step+'／'+steps.length+' 步 · '+label;
+    if(step===steps.length){
+      timer=null;
+      $('tour-next').disabled=true;
+      $('tour-play').textContent='再播一次';
+    }else if(automatic){
+      $('tour-play').textContent='暫停';
+      timer=setTimeout(()=>advanceTour(true),delay || 3000);
+    }
+  }
+  $('tour-next').onclick=()=>{
+    clearTimeout(timer);
+    timer=null;
+    $('tour-play').textContent='繼續播放';
+    advanceTour(false);
+  };
+  $('tour-play').onclick=()=>{
+    if(timer!==null){
+      clearTimeout(timer);
+      timer=null;
+      $('tour-play').textContent='繼續播放';
+      return;
+    }
+    if(step===steps.length) resetTour();
+    advanceTour(true);
+  };
+  $('tour-reset').onclick=resetTour;
+}
+if(!tourMode && !window.AndroidLedger && 'serviceWorker' in navigator && location.protocol==='https:'){
   navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('App offline setup failed',error));
 }
 </script>
