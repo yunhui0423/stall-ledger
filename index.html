@@ -32,6 +32,28 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #history-month{margin-top:4px}
 .row{grid-template-columns:minmax(120px,1fr) 98px 118px 118px auto}
 @media(max-width:860px){.row{grid-template-columns:1fr 1fr}.row label:first-child{grid-column:1/-1}}
+#review-panel{grid-column:1/-1;padding:clamp(14px,3vw,24px);border-color:#b7d1bd;background:#f8fbf7}
+.review-heading,.review-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.review-heading h2{margin:0}
+@media(min-width:731px){#closeout{grid-column:2;grid-row:1}}
+#review-meta{padding:5px 10px;border-radius:8px;background:#e8f2e8;font-size:.9rem}
+#draft{display:grid;gap:10px;margin:14px 0}
+#draft .row{grid-template-columns:minmax(0,2fr) minmax(100px,1fr) minmax(120px,1fr) minmax(120px,1fr) auto;background:white;border:1px solid #dbe4d8;border-radius:12px;padding:12px;gap:10px}
+#draft .row label:first-child{grid-column:auto}
+#draft .row input,#draft .row select{display:block;margin-top:4px}
+#draft .row :is(input,select):invalid{border-color:#a56a24;background:#fff9ef}
+#draft .row .flag{grid-row:2;background:#fff6e6;padding:6px 9px;border-radius:6px;font-size:.88rem}
+#draft .row button{grid-column:-2}
+.review-footer{border-top:1px solid #dbe4d8;padding-top:12px}
+@media(max-width:730px){
+  #review-panel{grid-row:2}
+  #review-panel:not([hidden]) + #closeout{grid-row:3}
+  #draft .row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #draft .row label:first-child{grid-column:1/-1}
+  #draft .row .flag{grid-row:auto}
+  #draft .row button{grid-column:2;justify-self:end}
+  .review-footer button{width:100%}
+}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div><label>帳目日期 <input type="date" id="day"></label></header>
@@ -43,9 +65,15 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p id="status" class="notice" role="status"></p>
-  <form id="review" hidden><h2>確認後入帳</h2><div id="draft"></div><button class="primary">全部確認入帳</button></form>
  </section>
- <section>
+ <section id="review-panel" hidden aria-labelledby="review-title">
+  <form id="review">
+   <div class="review-heading"><h2 id="review-title">確認後入帳</h2><p id="review-meta"></p></div>
+   <div id="draft"></div>
+   <div class="review-footer"><p class="muted">核對摘要、金額與類型後再入帳。</p><button class="primary" type="submit">全部確認入帳</button></div>
+  </form>
+ </section>
+ <section id="closeout">
   <h2>當日收攤</h2>
  <details class="lead"><summary>快速帶入找零金</summary>
  <label for="float-default" class="lead">預設找零金（元）</label>
@@ -310,9 +338,14 @@ function row(item, onRemove, editing=false){
   box.read=()=>({note:note.value.trim(),type:type.value,value:value.valueAsNumber,...(type.value.startsWith('digital')?{method:method.value}:{})});
   return box;
 }
+function updateReview(){
+  const count=$('draft').children.length;
+  $('review-panel').hidden=!count;
+  $('review-meta').textContent=$('day').value+' · '+count+' 筆待確認';
+}
 function addDraft(item){
-  $('draft').append(row(item, box=>{box.remove();$('review').hidden=!$('draft').children.length;}));
-  $('review').hidden=false;
+  $('draft').append(row(item, box=>{box.remove();updateReview();}));
+  updateReview();
 }
 const floatDefault=$('float-default');
 floatDefault.value=pref('float-default') || '';
@@ -512,7 +545,8 @@ $('day').onchange=()=>{
   if(!$('day').value){$('day').value=$('day').dataset.previous;return;}
   $('day').dataset.previous=$('day').value;
   render();
-  if(!$('review').hidden) $('status').textContent='入帳日期已切換為 '+$('day').value+'，請確認。';
+  updateReview();
+  if(!$('review-panel').hidden) $('status').textContent='入帳日期已切換為 '+$('day').value+'，請確認。';
 };
 $('day').dataset.previous=$('day').value;
 $('incident').onsubmit=event=>{
@@ -550,7 +584,7 @@ $('review').onsubmit=event=>{
   if(items.some(item=>!item.note)){ $('status').textContent='請填寫每筆帳目的摘要。';return;}
   today().entries.push(...items);
   save();
-  $('draft').replaceChildren(); $('review').hidden=true; $('speech').value='';
+  $('draft').replaceChildren(); updateReview(); $('speech').value='';
   $('status').textContent='已入帳 '+items.length+' 筆。';
   render();
 };
