@@ -148,6 +148,16 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 #receipt-demo{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
 #receipt-demo-orders dl{display:grid;gap:5px;margin:0}
 #receipt-demo-total{font-weight:700;color:var(--accent)}
+#online-receipts{background:#edf5ef;border-color:#a8c8b6;border-top:3px solid var(--accent)}
+#online-receipts h2{color:#104b38}
+.receipt-actions{display:grid;gap:7px}
+.receipt-actions button{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:white;border-color:#b7cebf;min-width:0}
+.receipt-actions strong{font-size:.86rem;color:#154d3a;background:#dceee2;padding:2px 7px;border-radius:5px;white-space:nowrap}
+#preset-cod-pending strong{color:#6b3d0d;background:#fff0d9}
+@media(min-width:860px){
+  #daily-work{grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);align-items:start}
+  #daily-work #review-panel,#daily-work .posted-panel{grid-column:1/-1}
+}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -187,27 +197,6 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   <label for="speech">帳目內容</label>
   <textarea id="speech" placeholder="例如：現金賣了兩千三，LINE Pay 收八百，補貨花四百五"></textarea>
   <div class="actions"><button class="primary" id="parse">拆成帳目</button><button id="mic">語音輸入</button><button id="example">帶入範例</button><button id="manual">手動新增</button></div>
-  <details id="online-receipts" class="lead">
-   <summary>網路收款</summary>
-   <div class="actions lead">
-    <button type="button" id="preset-cod-pending">貨到付款・待撥款</button>
-    <button type="button" id="preset-cod-paid">貨到付款・已撥款</button>
-    <button type="button" id="preset-bank-paid">銀行轉帳・已到帳</button>
-   </div>
-   <p class="muted lead">選一種收款狀態，填寫金額後確認入帳。</p>
-   <details id="receipt-demo" class="lead">
-    <summary>模擬第三方收款通知</summary>
-    <p class="muted lead">示範用的訂單與通知，不會寫入帳本。</p>
-    <div id="receipt-demo-orders" class="lead"></div>
-    <div class="actions lead">
-     <button type="button" id="demo-cod">送出物流撥款通知</button>
-     <button type="button" id="demo-transfer">送出銀行到帳通知</button>
-     <button type="button" id="demo-repeat" disabled>重送上一則通知</button>
-     <button type="button" id="demo-reset">重置示範</button>
-    </div>
-    <p id="receipt-demo-status" class="notice" role="status"></p>
-   </details>
-  </details>
   <p class="muted lead">按一下麥克風，說完會自動產生待確認帳目。語音轉寫以台灣華語為主，金額以新台幣記帳。</p>
   <p class="muted lead">拆帳後會先列出待確認帳目。會計科目可在草稿上修改。</p>
   <p id="status" class="notice" role="status"></p>
@@ -222,6 +211,27 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
  <button>儲存日記</button><p id="journal-status" class="notice" role="status"></p></form>
   </details>
  </section>
+  <section id="online-receipts" aria-labelledby="online-receipts-title">
+   <h2 id="online-receipts-title">網路收款</h2>
+   <div class="receipt-actions">
+    <button type="button" id="preset-cod-pending"><span>貨到付款</span><strong>待撥款</strong></button>
+    <button type="button" id="preset-cod-paid"><span>貨到付款</span><strong>已撥款</strong></button>
+    <button type="button" id="preset-bank-paid"><span>銀行轉帳</span><strong>已到帳</strong></button>
+   </div>
+   <p class="muted lead">選一種收款狀態，填寫金額後確認入帳。</p>
+   <details id="receipt-demo" class="lead">
+    <summary>模擬第三方收款通知</summary>
+    <p class="muted lead">示範用的訂單與通知，不會寫入帳本。</p>
+    <div id="receipt-demo-orders" class="lead"></div>
+    <div class="actions lead">
+     <button type="button" id="demo-cod">送出物流撥款通知</button>
+     <button type="button" id="demo-transfer">送出銀行到帳通知</button>
+     <button type="button" id="demo-repeat" disabled>重送上一則通知</button>
+     <button type="button" id="demo-reset">重置示範</button>
+    </div>
+    <p id="receipt-demo-status" class="notice" role="status"></p>
+   </details>
+  </section>
  <section id="review-panel" hidden aria-labelledby="review-title">
   <form id="review">
    <div class="review-heading"><h2 id="review-title" tabindex="-1">待確認帳目</h2><p id="review-meta"></p></div>
