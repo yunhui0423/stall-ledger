@@ -20,6 +20,7 @@ export async function startCloud(ui) {
   let pending = null;
   let task = null;
   let loadToken = 0;
+  let loginAttempt = 0;
   let loginInProgress = false;
 
   const historyKey = id => cacheKey(id) + '-login-history';
@@ -78,12 +79,19 @@ export async function startCloud(ui) {
       if (ui.hasDraft()) { ui.status('請先處理待確認帳目再登入。'); return; }
       if (loginInProgress) return;
       loginInProgress = true;
-      ui.status('正在開啟 Google 登入。若沒看到新視窗，請用 Chrome 或 Safari 直接開啟本站。');
+      const attempt = ++loginAttempt;
+      ui.status('正在開啟 Google 登入視窗…');
+      const timeout = setTimeout(() => {
+        if (loginAttempt !== attempt || auth.currentUser) return;
+        loginInProgress = false;
+        ui.status('尚未收到 Google 回應。請用 Chrome 或 Safari 直接開啟網站，允許彈出視窗後再試。');
+      }, 12000);
       try {
         const result = await authApi.signInWithPopup(auth, provider);
         recordLogin(result.user);
       }
       catch (error) {
+        if (loginAttempt !== attempt || auth.currentUser) return;
         const messages = {
           'auth/popup-blocked': '瀏覽器擋住了 Google 登入視窗。請允許本站的彈出視窗，或用 Chrome 或 Safari 直接開啟本站。',
           'auth/popup-closed-by-user': '登入視窗已關閉。請重新點「使用 Google 登入」。',
@@ -93,7 +101,10 @@ export async function startCloud(ui) {
           'auth/network-request-failed': '無法連到 Google 登入服務，請確認網路後重試。'
         };
         ui.status(messages[error.code] || 'Google 登入未完成。錯誤代碼：' + (error.code || 'unknown'));
-      } finally { loginInProgress = false; }
+      } finally {
+        clearTimeout(timeout);
+        if (loginAttempt === attempt) loginInProgress = false;
+      }
     },
     logout: async () => {
       if (ui.hasDraft()) { ui.status('請先處理待確認帳目再登出。'); return; }
