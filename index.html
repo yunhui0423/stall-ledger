@@ -148,7 +148,7 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  </dialog>
  <section id="cloud-panel" class="lead" hidden aria-label="雲端帳本">
  <div class="actions">
-  <button type="button" id="cloud-login">使用 Google 登入</button>
+  <button type="button" id="cloud-login" disabled>登入服務載入中…</button>
   <button type="button" id="cloud-sync" hidden>同步帳本</button>
   <button type="button" id="cloud-import" hidden>匯入此瀏覽器的舊帳</button>
   <button type="button" id="cloud-logout" hidden>登出</button>
@@ -1020,6 +1020,8 @@ if(!window.AndroidLedger && location.protocol==='https:'){
   import('./ledger-cloud.js').then(({startCloud})=>startCloud({
     setup(actions){
       $('cloud-panel').hidden=false;
+      $('cloud-login').disabled=false;
+      $('cloud-login').textContent='使用 Google 登入';
       for(const [id,action] of Object.entries(actions)) $('cloud-'+id).onclick=action;
     },
     authenticated(active){
@@ -1055,7 +1057,12 @@ if(!window.AndroidLedger && location.protocol==='https:'){
     },
     previewImport:()=>mergeBackup(records,localLedger),
     importDays(days){persist(days);records=days;render();cloudStatus('已匯入本機帳目，正在同步。');}
-  })).catch(error=>console.warn('Cloud ledger initialization failed',error));
+  })).catch(error=>{
+    $('cloud-panel').hidden=false;
+    $('cloud-login').textContent='登入暫時無法使用';
+    cloudStatus('登入服務載入失敗。請確認網路，或在 Chrome／Safari 重新開啟本站。');
+    console.warn('Cloud ledger initialization failed',error);
+  });
 }
 if(window.AndroidLedger) $('app-install').hidden=true;
 let installPrompt;
