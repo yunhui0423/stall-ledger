@@ -114,6 +114,12 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #account-summary-table table{border-collapse:collapse;width:100%;margin-top:6px}
 #account-summary-table :is(th,td){padding:6px 8px;border-bottom:1px solid #dbe4d8;text-align:left}
 #account-summary-table td:not(:first-child){white-space:nowrap;font-variant-numeric:tabular-nums}
+#category-settings{display:grid;gap:8px;margin-top:8px}
+.category-setting{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;padding:8px;border:1px solid #dbe4d8;border-radius:8px}
+.category-setting label{font-size:.9rem;min-width:0}
+.category-setting input,.category-setting select{display:block;width:100%}
+.category-setting .category-keywords{grid-column:1/-1}
+.category-setting button{justify-self:start}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -155,7 +161,12 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
      <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
     </div>
    </fieldset>
-   <label class="lead">自訂會計科目（每行一個）<textarea id="settings-categories" maxlength="600" placeholder="例如：外送平台手續費"></textarea></label>
+   <fieldset class="lead"><legend>自訂會計科目</legend>
+    <p class="muted">例如「包裝費」可填關鍵字「紙盒、提袋」。優先套用符合的自訂科目。</p>
+    <div id="category-settings"></div>
+    <button type="button" class="lead" id="add-category">新增科目</button>
+    <details class="lead"><summary>查看內建科目</summary><p id="builtin-categories" class="muted"></p></details>
+   </fieldset>
    <p class="muted">設定保存在目前的瀏覽器。</p>
    <p id="settings-status" class="notice" role="status"></p>
    <button class="primary lead" type="submit">儲存設定</button>
@@ -444,7 +455,60 @@ function field(label,input){
 }
 const directionLabels={in:'收入',out:'支出',float:'開攤備用現金',unpaid:'未收款'};
 const categories=['銷售收入','其他收入','進貨成本','包材費','攤位租金','運費','水電瓦斯費','支付手續費','銷售退款','其他支出'];
-const defaultAccountOptions=()=>[...categories,...(getLedgerSettings().categories || [])];
+const builtinAccountRules=[
+  ['銷售收入','in','銷售、營業額、賣了、賣出、cash sales、sold'],
+  ['進貨成本','out','進貨、補貨、食材、原料、批發、restock、supplies'],
+  ['包材費','out','包材、紙袋、紙盒、塑膠袋、餐盒、提袋、包裝、packaging'],
+  ['攤位租金','out','攤位費、攤租、攤位租金、租金、stall rent'],
+  ['運費','out','運費、宅配、寄貨、shipping、delivery fee'],
+  ['水電瓦斯費','out','水費、電費、瓦斯、utilities'],
+  ['支付手續費','out','手續費、payment fee、processing fee'],
+  ['銷售退款','out','退款、退給客人、refund']
+].map(([name,direction,keywords])=>({name,direction,keywords:keywords.split('、')}));
+function customAccountRules(settings=getLedgerSettings()){
+  return (settings.categories || []).map(category=>typeof category==='string'
+    ? {name:category,direction:'any',keywords:[category]} : category);
+}
+const defaultAccountOptions=()=>[...categories,...customAccountRules().map(rule=>rule.name)];
+const normalizeAccountText=value=>value.normalize('NFKC').toLowerCase();
+function recommendAccount(item, custom=customAccountRules()){
+  const direction=entryDirection(item.type);
+  if(direction!=='in' && direction!=='out') return '';
+  const text=normalizeAccountText(item.note);
+  function best(rules){
+    const scores=new Map();
+    for(const rule of rules){
+      if(rule.direction!=='any' && rule.direction!==direction) continue;
+      for(const word of rule.keywords){
+        const keyword=normalizeAccountText(word);
+        if(keyword && text.includes(keyword)) scores.set(rule.name,Math.max(scores.get(rule.name) || 0,keyword.length));
+      }
+    }
+    const sorted=[...scores.entries()].sort((a,b)=>b[1]-a[1]);
+    if(!sorted.length) return null;
+    return sorted[1]?.[1]===sorted[0][1]?'':sorted[0][0];
+  }
+  return best(custom) ?? best(builtinAccountRules) ?? '';
+}
+function appendCategorySetting(rule={name:'',direction:'any',keywords:[]}){
+  const row=control('div','',{class:'category-setting'});
+  const name=control('input','',{required:'',maxlength:60});
+  name.value=rule.name;
+  const direction=control('select');
+  direction.append(...Object.entries({any:'收入或支出',in:'收入',out:'支出'}).map(([value,label])=>control('option',label,{value})));
+  direction.value=rule.direction;
+  const keywords=control('input','',{maxlength:200,placeholder:'以頓號或逗號分隔'});
+  keywords.value=rule.keywords.join('、');
+  const keywordField=field('關鍵字',keywords);
+  keywordField.className='category-keywords';
+  const remove=control('button','移除科目',{type:'button'});
+  remove.onclick=()=>row.remove();
+  row.append(field('科目名稱',name),field('適用類型',direction),keywordField,remove);
+  row.read=()=>({name:name.value.trim(),direction:direction.value,
+    keywords:[...new Set(keywords.value.split(/[、，,；;]+/).map(word=>word.trim()).filter(Boolean))]});
+  $('category-settings').append(row);
+}
+$('add-category').onclick=()=>appendCategorySetting();
 function getLedgerSettings(){
   try {return JSON.parse(pref('ledger-options') || '{}') || {};}
   catch {return {};}
@@ -537,7 +601,9 @@ $('open-settings').onclick=()=>{
   const current=getLedgerSettings();
   $('settings-float').value=current.float ?? pref('float-default') ?? '';
   settingsFields.forEach((input,i)=>{input.value=current.ratios?.[i] ?? '';});
-  $('settings-categories').value=(current.categories || []).join('\n');
+  $('category-settings').replaceChildren();
+  customAccountRules(current).forEach(appendCategorySetting);
+  $('builtin-categories').textContent=categories.join('、');
   $('settings-status').textContent='';
   $('settings').showModal();
 };
@@ -548,10 +614,11 @@ $('settings-form').onsubmit=event=>{
   if(ratios.reduce((sum,value)=>sum+Math.round(value*100),0)>10000){
     $('settings-status').textContent='預設比例合計不可超過 100%。';return;
   }
-  const categories=[...new Set($('settings-categories').value.split(/\r?\n/).map(value=>value.trim()).filter(Boolean))];
-  if(categories.some(value=>value.length>60)){
-    $('settings-status').textContent='每個會計科目最多 60 個字。';return;
+  const categories=[...$('category-settings').children].map(row=>row.read());
+  if(categories.some(rule=>!rule.name) || new Set(categories.map(rule=>normalizeAccountText(rule.name))).size!==categories.length){
+    $('settings-status').textContent='請填寫每個科目名稱，並確認自訂科目沒有重複。';return;
   }
+  for(const rule of categories) if(!rule.keywords.length) rule.keywords=[rule.name];
   try{
     localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,categories}));
   }catch{$('settings-status').textContent='瀏覽器無法儲存設定。';return;}
@@ -903,7 +970,7 @@ $('parse').onclick=()=>{
   if(!items.length){$('status').textContent='請先輸入帳目內容。';return;}
   if($('draft').children.length && !confirm('用這次拆出的帳目取代目前草稿？')) return;
   $('draft').replaceChildren();
-  items.forEach(addDraft);
+  items.forEach(item=>addDraft({...item,account:recommendAccount(item)}));
   $('status').textContent='拆出 '+items.length+' 筆。'+(items.some(item=>item.flag)?'有欄位待確認，請先補上。':'請核對金額與類型。');
 };
 $('review').onsubmit=event=>{
@@ -920,7 +987,7 @@ function draftSpeech(transcript){
   if(!transcript){$('status').textContent='沒有取得語音辨識結果，請再試一次。';return;}
   $('speech').value=[$('speech').value.trim(),transcript].filter(Boolean).join('，');
   const items=parseText(transcript);
-  items.forEach(addDraft);
+  items.forEach(item=>addDraft({...item,account:recommendAccount(item)}));
   $('status').textContent=items.length
     ? '語音已自動拆出 '+items.length+' 筆。'+(items.some(item=>item.flag)?'請補齊待確認欄位。':'請核對後入帳。')
     : '沒有辨識到可拆分的語音，請再說一次。';
