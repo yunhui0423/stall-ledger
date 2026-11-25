@@ -139,6 +139,10 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   #cloud-panel #cloud-status{max-width:205px}
   .review-footer button{width:100%}
 }
+.setup-help{background:var(--tint);border:1px solid #c3dacb;border-radius:10px;padding:12px;margin:0 0 12px;max-width:760px}
+.setup-help h3{margin-top:0}
+#category-panel{border:1px solid var(--line);border-radius:11px;padding:10px}
+#settings-form>.muted{margin-top:8px}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -164,10 +168,10 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
   </div>
  </header>
  <nav id="ledger-nav" class="actions" aria-label="帳本導覽">
+  <button type="button" id="nav-settings" aria-controls="settings" aria-pressed="false">設定</button>
   <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
   <button type="button" id="nav-closeout" aria-controls="closeout-work" aria-pressed="false">收攤對帳</button>
   <button type="button" id="nav-history" aria-controls="history-view" aria-pressed="false">歷史資料</button>
-  <button type="button" id="nav-settings" aria-controls="settings" aria-pressed="false">設定</button>
  </nav>
 
 <div id="daily-view">
@@ -263,6 +267,11 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
 
  <section id="settings" class="lead" hidden aria-labelledby="settings-title">
   <div class="bar"><h2 id="settings-title" tabindex="-1">帳本設定</h2></div>
+  <div id="setup-help" class="setup-help" hidden>
+   <h3>第一次使用？先設定帳本</h3>
+   <p>開攤備用現金和存款比例都可以先留空。也可以直接使用預設會計科目。</p>
+   <p class="lead">開始後，在「每日記帳」按「帶入範例」再按「拆成帳目」，就能先試一遍。</p>
+  </div>
   <form id="settings-form">
    <label>開攤備用現金預設值（元） <input id="settings-float" type="number" min="1" max="999999999" step="1" inputmode="numeric"></label>
    <fieldset class="lead"><legend>預設存款比例</legend>
@@ -272,14 +281,14 @@ dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
      <label>營運周轉 %<input id="settings-reserve" type="number" min="0" max="100" step="0.01"></label>
     </div>
    </fieldset>
-   <fieldset class="lead"><legend>會計科目管理</legend>
+   <details class="lead" id="category-panel"><summary>會計科目管理</summary>
     <p class="muted">可新增、修改或移除任何科目。已入帳紀錄會保留原科目。</p>
     <div id="category-settings"></div>
     <button type="button" class="lead" id="add-category">新增科目</button>
-   </fieldset>
+   </details>
    <p class="muted">設定保存在目前的瀏覽器。</p>
    <p id="settings-status" class="notice" role="status"></p>
-   <button class="primary lead" type="submit">儲存設定</button>
+   <button class="primary lead" type="submit" id="save-settings">儲存設定</button>
   </form>
   <details id="settings-backup" class="lead"><summary>資料備份與安裝</summary>
 <section class="lead">
@@ -363,7 +372,7 @@ function parseLine(note){
   const tokens=text.match(new RegExp(money,'g')) || [];
   const digital=/line\s*pay|街口|電子支付|轉帳|刷卡|悠遊卡|全支付/i.test(note);
   const unpaid=/賒帳|賒欠|未收款|還沒(?:付|收到)|還未(?:付|收到)|假轉帳/i.test(note);
-  const outgoing=/支出|補貨|付了|付運費|付租金|花|成本|買了|買進|進貨|退款|退給/.test(note);
+  const outgoing=/支出|補貨|繳稅|繳了稅|繳營業稅|支付稅金|付了|付運費|付租金|花|成本|買了|買進|進貨|退款|退給/.test(note);
   const incoming=/收入|賣|收了|收到|收\s*[\d零一二三四五六七八九兩十百千萬]|營業額|入帳/.test(note);
   const float=/找零金|開攤備用現金|備用金|起始現金/.test(note);
   const settled=!outgoing && /(?:收到|收回|收了).*(?:賒帳|欠款)|(?:賒帳|欠款).*(?:已收|收到了)/.test(note) && !/還[沒未]|未收|沒收到|假轉帳/.test(note);
@@ -473,7 +482,7 @@ function field(label,input){
   const box=control('label',label); box.append(input); return box;
 }
 const directionLabels={in:'收入',out:'支出',float:'開攤備用現金',unpaid:'未收款'};
-const categories=['銷售收入','其他收入','進貨成本','包材費','攤位租金','運費','水電瓦斯費','支付手續費','銷售退款','其他支出'];
+const categories=['銷售收入','其他收入','進貨成本','包材費','攤位租金','運費','水電瓦斯費','支付手續費','稅金','銷售退款','其他支出'];
 const builtinAccountRules=[
   ['銷售收入','in','銷售、營業額、賣了、賣出、cash sales、sold'],
   ['進貨成本','out','進貨、補貨、食材、原料、批發、restock、supplies'],
@@ -482,10 +491,14 @@ const builtinAccountRules=[
   ['運費','out','運費、宅配、寄貨、shipping、delivery fee'],
   ['水電瓦斯費','out','水費、電費、瓦斯、utilities'],
   ['支付手續費','out','手續費、payment fee、processing fee'],
+  ['稅金','out','稅金、繳稅、繳了稅、營業稅、所得稅、tax'],
   ['銷售退款','out','退款、退給客人、refund']
 ].map(([name,direction,keywords])=>({name,direction,keywords:keywords.split('、')}));
 function accountRules(settings=getLedgerSettings()){
-  if(Array.isArray(settings.accountRules)) return settings.accountRules;
+  if(Array.isArray(settings.accountRules)){
+    if(settings.accountRuleVersion===2 || settings.accountRules.some(rule=>rule.name==='稅金')) return settings.accountRules;
+    return [...settings.accountRules,builtinAccountRules.find(rule=>rule.name==='稅金')];
+  }
   const merged=new Map(categories.map(name=>[name,{name,
     direction:name==='其他收入'?'in':'out',keywords:[]}]));
   for(const rule of builtinAccountRules) merged.set(rule.name,rule);
@@ -652,7 +665,7 @@ $('settings-form').onsubmit=event=>{
   }
 
   try{
-    localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,accountRules:categories}));
+    localStorage.setItem(key+'-ledger-options',JSON.stringify({float:$('settings-float').value,ratios,accountRules:categories,accountRuleVersion:2,setupComplete:true}));
   }catch{$('settings-status').textContent='瀏覽器無法儲存設定。';return;}
   showDefaultFloat();
   for(const select of document.querySelectorAll('.row select[data-account]')){
@@ -660,7 +673,14 @@ $('settings-form').onsubmit=event=>{
     select.replaceChildren(control('option','未分類',{value:''}),...[...new Set([...defaultAccountOptions(),selected].filter(Boolean))].map(value=>control('option',value,{value})));
     select.value=selected;
   }
+  const firstSetup=needsSetup;
+  finishSetup();
   $('settings-status').textContent='已儲存設定。';
+  if(firstSetup){
+    showLedgerView('daily');
+    $('status').textContent='設定完成。可直接記帳，或先按「帶入範例」試用拆帳。';
+    $('speech').focus();
+  }
   allocationTotal();
 };
 function allocationAmounts(cash, points){
@@ -743,6 +763,24 @@ const monthFields={income:'已收收入',expense:'已付支出',net:'收支淨�
   expected:'帳面現金',cash:'實點現金',diff:'現金差額'};
 const monthInput=$('history-month');
 monthInput.value=$('day').value.slice(0,7);
+let needsSetup=false;
+function finishSetup(){
+  needsSetup=false;
+  $('setup-help').hidden=true;
+  $('save-settings').textContent='儲存設定';
+  for(const name of ['daily','closeout','history']) $('nav-'+name).disabled=false;
+}
+function startSetupIfNeeded(){
+  const configured=getLedgerSettings().setupComplete || pref('ledger-options') !== null ||
+    Boolean(pref('float-default')) || Object.values(records).some(day=>
+      day.entries.length || day.cash!=='' || day.journal || day.allocation || incidentRows(day).length);
+  if(configured) return;
+  needsSetup=true;
+  $('setup-help').hidden=false;
+  $('save-settings').textContent='完成設定，開始記帳';
+  for(const name of ['daily','closeout','history']) $('nav-'+name).disabled=true;
+  showLedgerView('settings');
+}
 function showLedgerView(view){
   const history=view==='history';
   const settings=view==='settings';
@@ -1178,6 +1216,7 @@ $('export').onclick=()=>{
 };
 render();
 showDefaultFloat();
+startSetupIfNeeded();
 if(!window.AndroidLedger && location.protocol==='https:'){
   const cloudStatus=text=>$('cloud-status').textContent=text;
   import('./ledger-cloud.js?v=2').then(({startCloud})=>startCloud({
