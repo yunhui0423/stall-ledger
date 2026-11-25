@@ -20,6 +20,7 @@ export async function startCloud(ui) {
   let pending = null;
   let task = null;
   let loadToken = 0;
+  let loginInProgress = false;
 
   function cache() {
     try { localStorage.setItem(cacheKey(user.uid), JSON.stringify({revision,pending})); return true; }
@@ -57,8 +58,21 @@ export async function startCloud(ui) {
   ui.setup({
     login: async () => {
       if (ui.hasDraft()) { ui.status('請先處理待確認帳目再登入。'); return; }
+      if (loginInProgress) return;
+      loginInProgress = true;
+      ui.status('正在開啟 Google 登入。若沒看到新視窗，請用 Chrome 或 Safari 直接開啟本站。');
       try { await authApi.signInWithPopup(auth, provider); }
-      catch { ui.status('Google 登入未完成，請確認瀏覽器允許開啟登入視窗。'); }
+      catch (error) {
+        const messages = {
+          'auth/popup-blocked': '瀏覽器擋住了 Google 登入視窗。請允許本站的彈出視窗，或用 Chrome 或 Safari 直接開啟本站。',
+          'auth/popup-closed-by-user': '登入視窗已關閉。請重新點「使用 Google 登入」。',
+          'auth/unauthorized-domain': '這個網址尚未獲 Firebase 授權。請從正式的收攤對帳網址開啟。',
+          'auth/operation-not-allowed': 'Firebase 尚未啟用 Google 登入。',
+          'auth/web-storage-unsupported': '瀏覽器限制登入所需的儲存功能。請用 Chrome 或 Safari 的一般分頁開啟本站。',
+          'auth/network-request-failed': '無法連到 Google 登入服務，請確認網路後重試。'
+        };
+        ui.status(messages[error.code] || 'Google 登入未完成。錯誤代碼：' + (error.code || 'unknown'));
+      } finally { loginInProgress = false; }
     },
     logout: async () => {
       if (ui.hasDraft()) { ui.status('請先處理待確認帳目再登出。'); return; }
@@ -110,8 +124,10 @@ export async function startCloud(ui) {
       });
       if (pending) void flush();
       else ui.status('已登入，雲端帳本已載入。');
-    } catch {
-      if (token === loadToken) ui.status('無法載入雲端帳本。請檢查連線，再按「同步帳本」。');
+    } catch (error) {
+      if (token === loadToken) ui.status(error.code === 'permission-denied'
+        ? 'Google 已登入，但 Firestore 拒絕讀取帳本。請回報此畫面。'
+        : 'Google 已登入，但雲端帳本載入失敗。請確認連線，再按「同步帳本」。');
     }
   }
   authApi.onAuthStateChanged(auth, account => {
