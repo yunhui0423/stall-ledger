@@ -95,7 +95,13 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #entry-panel summary,#settings-backup summary{cursor:pointer;font-weight:600}
 #settings-backup{border-top:1px solid #dbe4d8;padding-top:10px;margin-top:14px}
 #settings-backup section{margin-top:8px;padding:10px}
-#cloud-panel{padding:8px 10px}
+#cloud-panel{position:relative;margin-inline-start:auto;text-align:right;min-width:0}
+#cloud-panel #cloud-status{max-width:230px;font-size:.84rem;color:#e0eee0;overflow-wrap:anywhere;text-align:right}
+#cloud-menu>summary{cursor:pointer;padding:7px 10px;border:1px solid #9caf9e;border-radius:8px;background:#edf4eb;color:#192c23}
+.cloud-menu-card{position:absolute;z-index:3;inset-inline-end:0;top:calc(100% + 7px);width:min(310px,calc(100vw - 44px));color:#192c23;text-align:left;box-shadow:0 8px 22px #173c2c30}
+.cloud-menu-card p{color:inherit}
+#cloud-identity{margin-bottom:8px;overflow-wrap:anywhere}
+@media(max-width:480px){header{gap:8px} #cloud-panel #cloud-status{max-width:200px}}
 @media(min-width:800px){
   #closeout-work{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-items:start}
 }
@@ -105,7 +111,28 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 }
 </style>
 <main>
- <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div></header>
+ <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
+  <div id="cloud-panel" hidden role="group" aria-label="雲端帳本">
+   <button type="button" id="cloud-login" disabled>登入服務載入中…</button>
+   <details id="cloud-menu" hidden>
+    <summary>我的帳號</summary>
+    <section class="cloud-menu-card" aria-label="帳號操作">
+     <p id="cloud-identity" hidden></p>
+     <div class="actions">
+      <button type="button" id="cloud-sync" hidden>同步帳本</button>
+      <button type="button" id="cloud-import" hidden>匯入此瀏覽器的舊帳</button>
+      <button type="button" id="cloud-logout" hidden>登出</button>
+     </div>
+     <details id="login-history" class="lead" hidden>
+      <summary>登入紀錄</summary>
+      <p class="muted">本瀏覽器最近 10 次成功登入。</p>
+      <ul id="login-history-list"></ul>
+     </details>
+    </section>
+   </details>
+   <p id="cloud-status" class="notice" role="status"></p>
+  </div>
+ </header>
  <nav id="ledger-nav" class="actions" aria-label="帳本導覽">
   <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
   <button type="button" id="nav-closeout" aria-controls="closeout-work" aria-pressed="false">收攤對帳</button>
@@ -146,21 +173,6 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
 </details>
   </details>
  </dialog>
- <section id="cloud-panel" class="lead" hidden aria-label="雲端帳本">
- <div class="actions">
-  <button type="button" id="cloud-login" disabled>登入服務載入中…</button>
-  <button type="button" id="cloud-sync" hidden>同步帳本</button>
-  <button type="button" id="cloud-import" hidden>匯入此瀏覽器的舊帳</button>
-  <button type="button" id="cloud-logout" hidden>登出</button>
- </div>
- <p id="cloud-identity" class="lead" hidden></p>
- <p id="cloud-status" class="notice" role="status"></p>
- <details id="login-history" class="lead" hidden>
-  <summary>登入紀錄</summary>
-  <p class="muted">本瀏覽器最近 10 次成功登入。</p>
-  <ul id="login-history-list"></ul>
- </details>
-</section>
 <div id="daily-view">
  <div class="date-bar"><label>帳目日期 <input type="date" id="day"></label></div>
  <div id="daily-work" class="workspace">
@@ -1029,6 +1041,8 @@ if(!window.AndroidLedger && location.protocol==='https:'){
     },
     authenticated(active){
       $('cloud-login').hidden=active;
+      $('cloud-menu').hidden=!active;
+      if(!active) $('cloud-menu').open=false;
       $('cloud-sync').hidden=!active;
       $('cloud-logout').hidden=!active;
     },
