@@ -8,36 +8,36 @@
 <title>收攤對帳</title>
 <style>
 :root{font:16px/1.5 system-ui,sans-serif;color:#192c23;background:#f4f5ed;color-scheme:light}
-*{box-sizing:border-box} body{margin:0} main{max-width:1080px;margin:auto;padding:clamp(18px,5vw,52px)}
-header{background:#173c2c;color:#fff;border-radius:22px;padding:28px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
-h1,h2,p{margin:0} h1{font-size:clamp(2rem,6vw,3.1rem)} header p{color:#d3e9d8}
-.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin:18px 0}
-section{background:#fff;padding:22px;border:1px solid #dbe4d8;border-radius:18px;min-width:0}
-h2{font-size:1.2rem;margin-bottom:12px} label{display:block;font-weight:600}
+*{box-sizing:border-box} body{margin:0} main{max-width:1080px;margin:auto;padding:clamp(10px,2.8vw,28px)}
+header{background:#173c2c;color:#fff;border-radius:16px;padding:14px 18px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+h1,h2,p{margin:0} h1{font-size:clamp(1.65rem,4vw,2.35rem)} header p{color:#d3e9d8}
+.grid{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);gap:10px;margin:10px 0;align-items:start}
+section{background:#fff;padding:14px;border:1px solid #dbe4d8;border-radius:12px;min-width:0}
+h2{font-size:1.1rem;margin-bottom:8px} label{display:block;font-weight:600}
 button,input,select,textarea{font:inherit;color:inherit;border:1px solid #9caf9e;border-radius:8px;padding:8px 10px;max-width:100%}
 #day{background:#fff;color:#192c23;border-color:#c2d7c6}
 #day::-webkit-datetime-edit{color:#192c23}
-textarea{display:block;width:100%;min-height:110px;margin:6px 0 12px;resize:vertical}
+textarea{display:block;width:100%;min-height:84px;margin:5px 0 8px;resize:vertical}
 button{background:#edf4eb;cursor:pointer} button:hover{filter:brightness(.95)} .primary{background:#18543a;color:#fff;border-color:#18543a}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #bd7500;outline-offset:2px}
 .actions{display:flex;flex-wrap:wrap;gap:8px} .muted{font-size:.9rem;color:#4f6055}
-dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #e0e9df} dd{margin:0;font-variant-numeric:tabular-nums;font-weight:700}
-#cash{width:100%;margin:6px 0 8px} #difference{font-weight:700} .lead{margin-top:10px}
+dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #e0e9df} dd{margin:0;font-variant-numeric:tabular-nums;font-weight:700}
+#cash{width:100%;margin:6px 0 8px} #difference{font-weight:700} .lead{margin-top:8px}
 .row{display:grid;grid-template-columns:1fr 105px 125px auto;align-items:end;gap:8px;border-top:1px solid #e0e9df;padding:10px 0}
 .row input,.row select{width:100%}.row label{min-width:0;font-size:.88rem}.row .flag{grid-column:1/-1;color:#865109;margin:0}
-.notice{margin-top:8px;min-height:1.5em;color:#865109} .bar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.notice{color:#865109}.notice:not(:empty){margin-top:6px} .bar{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
 @media(max-width:730px){.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr 1fr}.row label:first-child{grid-column:1/-1}}
 #history-list{overflow-x:auto;margin-top:12px} #history-list table{border-collapse:collapse;width:100%;white-space:nowrap}
 #history-list th,#history-list td{text-align:left;padding:8px;border-bottom:1px solid #e0e9df}
 #history-month{margin-top:4px}
 .row{grid-template-columns:minmax(120px,1fr) 98px 118px 118px auto}
 @media(max-width:860px){.row{grid-template-columns:1fr 1fr}.row label:first-child{grid-column:1/-1}}
-#review-panel{grid-column:1/-1;padding:clamp(14px,3vw,24px);border-color:#b7d1bd;background:#f8fbf7}
+#review-panel{grid-column:1/-1;padding:clamp(10px,2vw,16px);border-color:#b7d1bd;background:#f8fbf7}
 .review-heading,.review-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
 .review-heading h2{margin:0}
 @media(min-width:731px){#closeout{grid-column:2;grid-row:1}}
 #review-meta{padding:5px 10px;border-radius:8px;background:#e8f2e8;font-size:.9rem}
-#draft{display:grid;gap:10px;margin:14px 0}
+#draft{display:grid;gap:7px;margin:9px 0}
 #draft .row{grid-template-columns:minmax(0,2fr) minmax(100px,1fr) minmax(120px,1fr) minmax(120px,1fr) auto;background:white;border:1px solid #dbe4d8;border-radius:12px;padding:12px;gap:10px}
 #draft .row label:first-child{grid-column:auto}
 #draft .row input,#draft .row select{display:block;margin-top:4px}
@@ -59,11 +59,21 @@ dl{margin:0 0 16px} dl div{display:flex;justify-content:space-between;gap:10px;p
 #journal-form{margin-top:12px}
 #allocation-form label{display:grid;grid-template-columns:minmax(0,1fr) minmax(65px,90px) minmax(70px,1fr);align-items:center;gap:8px;padding:7px 0}
 #allocation-form output{font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
-#ledger-nav{margin-top:14px}
+#ledger-nav{margin-top:8px}
 #ledger-nav [aria-pressed="true"]{background:#18543a;color:#fff;border-color:#18543a}
 .archive-filters{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:12px}
 .archive-filters label input:not([type=checkbox]){display:block;margin-top:4px}
 #history-list .archive-note{white-space:pre-wrap;overflow-wrap:anywhere;min-width:160px;max-width:280px}
+#closeout #totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;margin-top:8px}
+#closeout #totals div{display:block;padding:4px 7px;background:#f4f7f1;border:0;border-radius:6px;min-width:0}
+#closeout #totals dt{font-size:.82rem;color:#4f6055}
+#closeout #totals dd{overflow-wrap:anywhere}
+#closeout #totals div:last-child{background:#e5f0e5}
+#closeout dl:empty{margin:0}
+#closeout #checks{margin:6px 0;padding-inline-start:22px}
+#journal-panel{padding-top:8px}
+#allocation-form label{padding-block:4px}
+@media(min-width:731px){#closeout #totals{grid-template-columns:repeat(3,minmax(0,1fr))}}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和找零金記下來。</p></div></header>
