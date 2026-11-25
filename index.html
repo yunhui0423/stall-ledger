@@ -109,6 +109,11 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   #ledger-nav button{font-size:.9rem}
   #draft .row,#entries .row{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+#account-summary summary{cursor:pointer;font-weight:600}
+#account-summary-table{overflow-x:auto}
+#account-summary-table table{border-collapse:collapse;width:100%;margin-top:6px}
+#account-summary-table :is(th,td){padding:6px 8px;border-bottom:1px solid #dbe4d8;text-align:left}
+#account-summary-table td:not(:first-child){white-space:nowrap;font-variant-numeric:tabular-nums}
 </style>
 <main>
  <header><div><h1>收攤對帳</h1><p>把今天的收入、支出和開攤備用現金記下來。</p></div>
@@ -255,6 +260,11 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
  <h3>所選月份摘要</h3>
  <dl id="month-totals" class="lead"></dl>
  <p id="history-discrepancy" class="muted"></p>
+ <details class="lead" id="account-summary">
+  <summary>按會計科目統計</summary>
+  <p class="muted lead" id="account-summary-scope"></p>
+  <div id="account-summary-table"></div>
+ </details>
  <h3>每日紀錄</h3>
  <p id="history-results" class="muted" role="status"></p><div id="history-list"></div>
 </section>
@@ -654,8 +664,45 @@ function searchHistory(rows, keyword){
     return words.every(word=>haystack.includes(word));
   });
 }
+function accountTotals(rows){
+  const totals=new Map();
+  for(const {entries} of rows){
+    for(const item of entries){
+      const direction=entryDirection(item.type);
+      if(direction!=='in' && direction!=='out') continue;
+      const account=item.account || '';
+      if(!totals.has(account)) totals.set(account,{name:account || '未分類',income:0,expense:0});
+      const entry=totals.get(account);
+      entry[direction==='in'?'income':'expense']+=item.value;
+    }
+  }
+  return [...totals.values()].sort((a,b)=>b.expense-a.expense || b.income-a.income || a.name.localeCompare(b.name,'zh-Hant'));
+}
+function renderAccountSummary(rows,month){
+  const target=$('account-summary-table');
+  $('account-summary-scope').textContent=month+' 的已收收入與已付支出';
+  const totals=accountTotals(rows);
+  if(!totals.length){
+    target.replaceChildren(control('p','這個月還沒有已收收入或已付支出。',{class:'muted lead'}));return;
+  }
+  const table=control('table');
+  const head=control('thead');
+  const headers=control('tr');
+  headers.append(...['科目','收入','支出'].map(label=>control('th',label,{scope:'col'})));
+  head.append(headers);
+  const body=control('tbody');
+  for(const {name,income,expense} of totals){
+    const row=control('tr');
+    row.append(control('th',name,{scope:'row'}),control('td',income?format(income):'—'),control('td',expense?format(expense):'—'));
+    body.append(row);
+  }
+  table.append(head,body);
+  target.replaceChildren(table);
+}
 function renderMonth(){
-  const rows=monthRows(records,monthInput.value || $('day').value.slice(0,7));
+  const month=monthInput.value || $('day').value.slice(0,7);
+  const rows=monthRows(records,month);
+  renderAccountSummary(rows,month);
   $('export-month').disabled=!rows.length;
   const mismatches=rows.filter(row=>row.diff!==null && row.diff!==0);
   const counts=new Map();
@@ -765,7 +812,9 @@ function render(){
     const form=control('form');
     const edit=row(item,()=>{if(confirm('刪除這筆帳目？')){today().entries.splice(i,1);save();render();}},true);
     const update=control('button','儲存更正',{hidden:''});
-    edit.oninput=()=>{update.hidden=false;};
+    const showUpdate=()=>{update.hidden=false;};
+    edit.addEventListener('input',showUpdate);
+    edit.addEventListener('change',showUpdate);
     form.onsubmit=event=>{
       event.preventDefault();
       const value=edit.read();
