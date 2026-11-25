@@ -84,7 +84,16 @@ dl{margin:0 0 10px} dl div{display:flex;justify-content:space-between;gap:10px;p
   <button type="button" id="nav-daily" aria-controls="daily-view" aria-pressed="true">每日記帳</button>
   <button type="button" id="nav-history" aria-controls="history-view" aria-pressed="false">歷史資料</button>
  </nav>
- <div id="daily-view">
+ <section id="cloud-panel" class="lead" hidden aria-label="雲端帳本">
+ <div class="actions">
+  <button type="button" id="cloud-login">使用 Google 登入</button>
+  <button type="button" id="cloud-sync" hidden>同步帳本</button>
+  <button type="button" id="cloud-import" hidden>匯入此瀏覽器的舊帳</button>
+  <button type="button" id="cloud-logout" hidden>登出</button>
+ </div>
+ <p id="cloud-status" class="notice" role="status"></p>
+</section>
+<div id="daily-view">
  <label class="lead">帳目日期 <input type="date" id="day"></label>
  <div class="grid">
  <section>
@@ -211,8 +220,14 @@ function payment(item){
   return 'other';
 }
 const today = () => records[$('day').value] ??= {entries:[], cash:''};
+let persistCloud=null;
+let localLedger=records;
+function persist(next){
+  if(persistCloud) persistCloud(next);
+  else {localStorage.setItem(key,JSON.stringify(next));localLedger=next;}
+}
 function save(){
-  try { localStorage.setItem(key,JSON.stringify(records)); }
+  try { persist(records); }
   catch { $('storage').textContent = '瀏覽器無法保存帳目，請先匯出 CSV 再關閉。'; }
 }
 const digits = Object.fromEntries([... '零一二三四五六七八九'].map((x,i)=>[x,i]));
@@ -445,7 +460,7 @@ function saveDayField(field,value,status){
   const day=$('day').value;
   const next={...records,[day]:{...today(),[field]:value}};
   try{
-    localStorage.setItem(key,JSON.stringify(next));
+    persist(next);
     records=next;
     renderMonth();
     if(field==='journal') $('journal-saved').hidden=!value;
@@ -686,7 +701,7 @@ function saveIncidents(entries,message){
   if(entries.length) updated.incidents=entries;
   else delete updated.incidents;
   const next={...records,[$('day').value]:updated};
-  try {localStorage.setItem(key,JSON.stringify(next));}
+  try {persist(next);}
   catch {$('incident-status').textContent='瀏覽器無法儲存差額紀錄，請稍後再試。';return;}
   records=next;
   resetIncidentForm();
@@ -860,7 +875,7 @@ $('backup-file').onchange=async event=>{
   try {
     const {merged,added,skipped}=mergeBackup(records,readBackup(await file.text()));
     if(added){
-      localStorage.setItem(key,JSON.stringify(merged));
+      persist(merged);
       records=merged;
       render();
     }
@@ -885,6 +900,39 @@ $('export').onclick=()=>{
   downloadFile('\uFEFF'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8','收攤對帳_'+$('day').value+'.csv');
 };
 render();
+if(!window.AndroidLedger && location.protocol==='https:'){
+  const cloudStatus=text=>$('cloud-status').textContent=text;
+  import('./ledger-cloud.js').then(({startCloud})=>startCloud({
+    setup(actions){
+      $('cloud-panel').hidden=false;
+      for(const [id,action] of Object.entries(actions)) $('cloud-'+id).onclick=action;
+    },
+    authenticated(active){
+      $('cloud-login').hidden=active;
+      $('cloud-sync').hidden=!active;
+      $('cloud-logout').hidden=!active;
+    },
+    decode:readBackup,
+    hasDraft:()=>$('draft').children.length>0,
+    status:cloudStatus,
+    local(){
+      persistCloud=null;
+      records=localLedger;
+      $('cloud-import').hidden=true;
+      cloudStatus('正在使用此瀏覽器的本機帳本。');
+      render();
+    },
+    account(days,writer){
+      if($('draft').children.length) throw new Error('pending-draft');
+      persistCloud=writer;
+      records=days;
+      $('cloud-import').hidden=false;
+      render();
+    },
+    previewImport:()=>mergeBackup(records,localLedger),
+    importDays(days){persist(days);records=days;render();cloudStatus('已匯入本機帳目，正在同步。');}
+  })).catch(error=>console.warn('Cloud ledger initialization failed',error));
+}
 if(window.AndroidLedger) $('app-install').hidden=true;
 let installPrompt;
 window.addEventListener('beforeinstallprompt', event=>{
