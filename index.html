@@ -1017,12 +1017,15 @@ render();
 showDefaultFloat();
 if(!window.AndroidLedger && location.protocol==='https:'){
   const cloudStatus=text=>$('cloud-status').textContent=text;
-  import('./ledger-cloud.js').then(({startCloud})=>startCloud({
+  import('./ledger-cloud.js?v=2').then(({startCloud})=>startCloud({
     setup(actions){
       $('cloud-panel').hidden=false;
       $('cloud-login').disabled=false;
       $('cloud-login').textContent='使用 Google 登入';
-      for(const [id,action] of Object.entries(actions)) $('cloud-'+id).onclick=action;
+      $('cloud-login').onclick=actions.login;
+      $('cloud-logout').onclick=actions.logout;
+      $('cloud-sync').onclick=actions.sync;
+      $('cloud-import').onclick=actions.importLocal;
     },
     authenticated(active){
       $('cloud-login').hidden=active;
